@@ -12,3 +12,6 @@ Try the following:
     ./c4 c4.c hello.c
     ./c4 c4.c c4.c hello.c
 
+To enable all warnings from gcc, use:
+
+    gcc -o c4 c4.c -Wall -Wno-return-type -Wno-implicit-int -Wno-parentheses -Wno-implicit-function-declaration
