@@ -42,7 +42,7 @@ enum {
 // opcodes
 enum { LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,
        OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,
-       OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,EXIT };
+       OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,MMAP,EXIT };
 
 // types
 enum { CHAR, INT, PTR };
@@ -63,7 +63,7 @@ void next()
         while (le < e) {
           printf("%8.4s", &"LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,"
                            "OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
-                           "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,EXIT,"[*++le * 5]);
+                           "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,MMAP,EXIT,"[*++le * 5]);
           if (*le <= ADJ) printf(" %d\n", *++le); else printf("\n");
         }
       }
@@ -359,7 +359,7 @@ int run(int poolsz, int *start, int argc, char **argv)
       printf("%d> %.4s", cycle,
         &"LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,"
          "OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
-         "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,EXIT,"[i * 5]);
+         "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,MMAP,EXIT,"[i * 5]);
       if (i <= ADJ) printf(" %d\n", *pc); else printf("\n");
     }
     if      (i == LEA) a = (int)(bp + *pc++);                             // load local address
@@ -401,6 +401,7 @@ int run(int poolsz, int *start, int argc, char **argv)
     else if (i == MALC) a = (int)malloc(*sp);
     else if (i == MSET) a = (int)memset((char *)sp[2], sp[1], *sp);
     else if (i == MCMP) a = memcmp((char *)sp[2], (char *)sp[1], *sp);
+    else if (i == MMAP) a = (int)mmap((char*)sp[5], sp[4], sp[3], sp[2], sp[1], *sp);
     else if (i == EXIT) { printf("exit(%d) cycle = %d\n", *sp, cycle); return *sp; }
     else { printf("unknown instruction = %d! cycle = %d\n", i, cycle); return -1; }
   }
@@ -414,7 +415,9 @@ int jit(int poolsz, int *start, int argc, char **argv)
   char *jitmem;      // executable memory for JIT-compiled native code
 
   // setup jit memory
-  jitmem = mmap(0, poolsz, PROT_EXEC | PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+  // PROT_EXEC | PROT_READ | PROT_WRITE = 7
+  // MAP_PRIVATE | MAP_ANON = 0x22
+  jitmem = mmap(0, poolsz, 7, 0x22, -1, 0);
   if (!jitmem) { printf("could not mmap(%d) jit executable memory\n", poolsz); return -1; }
 
   // first pass: emit native code
@@ -523,7 +526,7 @@ int main(int argc, char **argv)
   memset(data, 0, poolsz);
 
   p = "char else enum if int return sizeof while "
-      "open read close printf malloc memset memcmp exit void main";
+      "open read close printf malloc memset memcmp mmap exit void main";
   i = Char; while (i <= While) { next(); id[Tk] = i++; } // add keywords to symbol table
   i = OPEN; while (i <= EXIT) { next(); id[Class] = Sys; id[Type] = INT; id[Val] = i++; } // add library to symbol table
   next(); id[Tk] = Char; // handle void type
