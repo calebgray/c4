@@ -443,13 +443,13 @@ int jit(int poolsz, int *start, int argc, char **argv)
     else if (i == XOR) { *(int *)je = 0xc83159;   je = je + 3; } // pop %ecx; xorl %ecx, %eax
     else if (i == AND) { *(int *)je = 0xc82159;   je = je + 3; } // pop %ecx; andl %ecx, %eax
     else if (EQ <= i && i <= GE) {
-        *(int*)je=0x0fc13959; je+=4; *(int*)je=0x9866c094; // pop %ecx; cmp %ecx, %eax; sete %al; cbw; - EQ
+        *(int*)je=0x0fc13959; je = je + 4; *(int*)je=0x9866c094; // pop %ecx; cmp %ecx, %eax; sete %al; cbw; - EQ
         if      (i == NE)  { *je = 0x95; } // setne %al
         else if (i == LT)  { *je = 0x9c; } // setl %al
         else if (i == GT)  { *je = 0x9f; } // setg %al
         else if (i == LE)  { *je = 0x9e; } // setle %al
         else if (i == GE)  { *je = 0x9d; } // setge %al
-        je+=4; *je++=0x98;  // cwde
+        je = je + 4; *je++=0x98;  // cwde
     }
     else if (i == SHL) { *(int*)je = 0xe0d39159; je = je + 4; } // pop %ecx; xchg %eax, %ecx; shl %cl, %eax
     else if (i == SHR) { *(int*)je = 0xe8d39159; je = je + 4; } // pop %ecx; xchg %eax, %ecx; shr %cl, %eax
@@ -457,7 +457,7 @@ int jit(int poolsz, int *start, int argc, char **argv)
     else if (i == SUB) { *(int*)je = 0xc8299159; je = je + 4; } // pop %ecx; xchg %eax, %ecx; subl %ecx, %eax
     else if (i == MUL) { *(int*)je = 0xc1af0f59; je = je + 4; } // pop %ecx; imul %ecx, %eax
     else if (i == DIV) { *(int*)je = 0xf9f79159; je = je + 4; } // pop %ecx; xchg %eax, %ecx; idiv %ecx, %eax
-    else if (i == MOD) { *(int*)je = 0xd2319159; je += 4; *(int *)je = 0x92f9f7; je += 3; }
+    else if (i == MOD) { *(int*)je = 0xd2319159; je = je + 4; *(int *)je = 0x92f9f7; je = je + 3; }
     else if (i == JMP) { ++pc; *je       = 0xe9;     je = je + 5; } // jmp <off32>
     else if (i == JSR) { ++pc; *je       = 0xe8;     je = je + 5; } // call <off32>
     else if (i == BZ)  { ++pc; *(int*)je = 0x840fc085; je = je + 8; } // test %eax, %eax; jz <off32>
@@ -468,14 +468,14 @@ int jit(int poolsz, int *start, int argc, char **argv)
       else if (i == MALC) tmp = (int)malloc; else if (i == MSET) tmp = (int)memset;
       else if (i == MCMP) tmp = (int)memcmp; else if (i == EXIT) tmp = (int)exit;
       if (*pc++ == ADJ) { i = *pc++; } else { printf("no ADJ after native proc!\n"); exit(2); }
-      *je++ = 0xb9; *(int*)je = i << 2; je += 4;  // movl $(4 * n), %ecx;
-      *(int*)je = 0xce29e689; je += 4; // mov %esp, %esi; sub %ecx, %esi;  -- %esi will adjust the stack
-      *(int*)je = 0x8302e9c1; je += 4; // shr $2, %ecx; and                -- alignment of %esp for OS X
-      *(int*)je = 0x895af0e6; je += 4; // $0xfffffff0, %esi; pop %edx; mov..
-      *(int*)je = 0xe2fc8e54; je += 4; // ..%edx, -4(%esi,%ecx,4); loop..  -- reversing args order
-      *(int*)je = 0xe8f487f9; je += 4; // ..<'pop' offset>; xchg %esi, %esp; call    -- saving old stack in %esi
+      *je++ = 0xb9; *(int*)je = i << 2; je = je + 4;  // movl $(4 * n), %ecx;
+      *(int*)je = 0xce29e689; je = je + 4; // mov %esp, %esi; sub %ecx, %esi;  -- %esi will adjust the stack
+      *(int*)je = 0x8302e9c1; je = je + 4; // shr $2, %ecx; and                -- alignment of %esp for OS X
+      *(int*)je = 0x895af0e6; je = je + 4; // $0xfffffff0, %esi; pop %edx; mov..
+      *(int*)je = 0xe2fc8e54; je = je + 4; // ..%edx, -4(%esi,%ecx,4); loop..  -- reversing args order
+      *(int*)je = 0xe8f487f9; je = je + 4; // ..<'pop' offset>; xchg %esi, %esp; call    -- saving old stack in %esi
       *(int*)je = tmp - (int)(je + 4); je = je + 4; // <*tmp offset>;
-      *(int*)je = 0xf487; je += 2;     // xchg %esi, %esp  -- ADJ, back to old stack without arguments
+      *(int*)je = 0xf487; je = je + 2;     // xchg %esi, %esp  -- ADJ, back to old stack without arguments
     }
     else { printf("code generation failed for %d!\n", i); return -1; }
   }
@@ -487,8 +487,8 @@ int jit(int poolsz, int *start, int argc, char **argv)
     je = (char*)(((unsigned)*pc++ >> 8) | ((unsigned)jitmem & 0xff000000)); // MSB is restored from jitmem
     if (i == JSR || i == JMP || i == BZ || i == BNZ) {
         tmp = (*(unsigned*)(*pc++) >> 8) | ((unsigned)jitmem & 0xff000000); // extract address
-        if      (i == JSR || i == JMP) { je += 1; *(int*)je = tmp - (int)(je + 4); }
-        else if (i == BZ  || i == BNZ) { je += 4; *(int*)je = tmp - (int)(je + 4); }
+        if      (i == JSR || i == JMP) { je = je + 1; *(int*)je = tmp - (int)(je + 4); }
+        else if (i == BZ  || i == BNZ) { je = je + 4; *(int*)je = tmp - (int)(je + 4); }
     }
     else if (i < LEV) { ++pc; }
   }
