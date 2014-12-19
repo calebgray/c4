@@ -45,7 +45,7 @@ enum { CHAR, INT, PTR };
 // identifier offsets (since we can't create an ident struct)
 enum { Tk, Hash, Name, Class, Type, Val, HClass, HType, HVal, Idsz };
 
-next()
+void next()
 {
   char *pp;
 
@@ -131,7 +131,7 @@ next()
   }
 }
 
-expr(int lev)
+void expr(int lev)
 {
   int t, *d;
 
@@ -280,7 +280,7 @@ expr(int lev)
   }
 }
 
-stmt()
+void stmt()
 {
   int *a, *b;
 
@@ -329,7 +329,7 @@ stmt()
   }
 }
 
-run(int poolsz, int *start, int argc, char **argv)
+int run(int poolsz, int *start, int argc, char **argv)
 {
   int *pc, *sp, *bp, a, cycle; // vm registers
   int i, *t; // temps
@@ -401,7 +401,7 @@ run(int poolsz, int *start, int argc, char **argv)
   }
 }
 
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
   int fd, bt, ty, poolsz, *idmain;
   int i; // temps
@@ -423,9 +423,10 @@ main(int argc, char **argv)
   memset(data, 0, poolsz);
 
   p = "char else enum if int return sizeof while "
-      "open read close printf malloc memset memcmp exit main";
+      "open read close printf malloc memset memcmp exit void main";
   i = Char; while (i <= While) { next(); id[Tk] = i++; } // add keywords to symbol table
   i = OPEN; while (i <= EXIT) { next(); id[Class] = Sys; id[Type] = INT; id[Val] = i++; } // add library to symbol table
+  next(); id[Tk] = Char; // handle void type
   next(); idmain = id; // keep track of main
 
   if (!(lp = p = malloc(poolsz))) { printf("could not malloc(%d) source area\n", poolsz); return -1; }
@@ -527,5 +528,5 @@ main(int argc, char **argv)
     }
     next();
   }
-  run(poolsz, (int *)idmain[Val], argc, argv);
+  return run(poolsz, (int *)idmain[Val], argc, argv);
 }
