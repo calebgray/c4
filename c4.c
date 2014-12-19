@@ -42,7 +42,7 @@ enum {
 // opcodes
 enum { LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,
        OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,
-       OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,MMAP,EXIT };
+       OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,MMAP,QSRT,EXIT };
 
 // types
 enum { CHAR, INT, PTR };
@@ -63,7 +63,7 @@ void next()
         while (le < e) {
           printf("%8.4s", &"LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,"
                            "OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
-                           "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,MMAP,EXIT,"[*++le * 5]);
+                           "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,QSRT,MMAP,EXIT,"[*++le * 5]);
           if (*le <= ADJ) printf(" %d\n", *++le); else printf("\n");
         }
       }
@@ -359,7 +359,7 @@ int run(int poolsz, int *start, int argc, char **argv)
       printf("%d> %.4s", cycle,
         &"LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,"
          "OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
-         "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,MMAP,EXIT,"[i * 5]);
+         "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,QSRT,MMAP,EXIT,"[i * 5]);
       if (i <= ADJ) printf(" %d\n", *pc); else printf("\n");
     }
     if      (i == LEA) a = (int)(bp + *pc++);                             // load local address
@@ -411,8 +411,9 @@ int jit(int poolsz, int *start, int argc, char **argv)
 {
   int *pc;
   int i, tmp;        // temps
-  char *je;          // current position in emitted native code
+  char *je, *tje;    // current position in emitted native code
   char *jitmem;      // executable memory for JIT-compiled native code
+  char *jitmain;
 
   // setup jit memory
   // PROT_EXEC | PROT_READ | PROT_WRITE = 7
@@ -482,6 +483,7 @@ int jit(int poolsz, int *start, int argc, char **argv)
     }
     else { printf("code generation failed for %d!\n", i); return -1; }
   }
+  tje = je;
 
   // second pass, relocation
   pc = text + 1;
@@ -496,10 +498,19 @@ int jit(int poolsz, int *start, int argc, char **argv)
     else if (i < LEV) { ++pc; }
   }
 
-  // run jitted code
-  int (*jitmain)(char**, int); // c4 vm pushes first argument first, unlike cdecl
-  jitmain = (void *)(*(unsigned*)start >> 8 | ((unsigned)jitmem & 0xff000000));
-  return jitmain(argv, argc);
+  if (!src) {
+    je = tje;
+    jitmain = (char *)(((*(int *)start >> 8) & 0x00ffffff) | ((int)jitmem & 0xff000000));
+    *je++ = 0x56;                                                     // push %esi
+    *je++ = 0xb8; *(int *)   je = argc; je = je+4; *je++ = 0x50;      // movl $argc, %eax; push %eax
+    *je++ = 0xb8; *(char ***)je = argv; je = je+4; *je++ = 0x50;      // movl $argv, %eax; push %eax
+    *je++ = 0xe8; *(int *)je = (int)jitmain - (int)je - 4; je = je+4; // call main
+    *je++ = 0x83; *je++ = 0xc4; *je++ = 8;                            // add $8, %esp
+    *je++ = 0x5e;                                                     // pop %esi
+    *je++ = 0xc3;                                                     // ret
+    qsort(sym, 2, 1, (void *)tje); // hack to call a function pointer
+  }
+  return 0;
 }
 
 int main(int argc, char **argv)
@@ -526,7 +537,7 @@ int main(int argc, char **argv)
   memset(data, 0, poolsz);
 
   p = "char else enum if int return sizeof while "
-      "open read close printf malloc memset memcmp mmap exit void main";
+      "open read close printf malloc memset memcmp mmap qsort exit void main";
   i = Char; while (i <= While) { next(); id[Tk] = i++; } // add keywords to symbol table
   i = OPEN; while (i <= EXIT) { next(); id[Class] = Sys; id[Type] = INT; id[Val] = i++; } // add library to symbol table
   next(); id[Tk] = Char; // handle void type
