@@ -5,7 +5,7 @@ An exercise in minimalism.
 
 Try the following:
 
-    gcc -o c4 c4.c  (you may need the -m32 option on 64bit machines)
+    gcc -o c4 c4.c -ldl  (you may need the -m32 option on 64bit machines)
     ./c4 hello.c
     ./c4 -s hello.c
     
@@ -14,4 +14,4 @@ Try the following:
 
 To enable all warnings from gcc, use:
 
-    gcc -o c4 c4.c -Wall -Wno-return-type -Wno-implicit-int -Wno-parentheses -Wno-implicit-function-declaration
+    gcc -o c4 c4.c -ldl -Wall -Wno-return-type -Wno-implicit-int -Wno-parentheses -Wno-implicit-function-declaration

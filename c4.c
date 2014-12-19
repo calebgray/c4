@@ -14,6 +14,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <dlfcn.h>
 #ifdef __x86_64__
 #define int long
 #endif
@@ -42,7 +43,7 @@ enum {
 // opcodes
 enum { LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,
        OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,
-       OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,MMAP,QSRT,EXIT };
+       OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,MMAP,DSYM,QSRT,EXIT };
 
 // types
 enum { CHAR, INT, PTR };
@@ -63,7 +64,7 @@ void next()
         while (le < e) {
           printf("%8.4s", &"LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,"
                            "OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
-                           "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,QSRT,MMAP,EXIT,"[*++le * 5]);
+                           "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,DSYM,QSRT,MMAP,EXIT,"[*++le * 5]);
           if (*le <= ADJ) printf(" %d\n", *++le); else printf("\n");
         }
       }
@@ -359,7 +360,7 @@ int run(int poolsz, int *start, int argc, char **argv)
       printf("%d> %.4s", cycle,
         &"LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,"
          "OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
-         "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,QSRT,MMAP,EXIT,"[i * 5]);
+         "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,DSYM,QSRT,MMAP,EXIT,"[i * 5]);
       if (i <= ADJ) printf(" %d\n", *pc); else printf("\n");
     }
     if      (i == LEA) a = (int)(bp + *pc++);                             // load local address
@@ -467,10 +468,12 @@ int jit(int poolsz, int *start, int argc, char **argv)
     else if (i == BZ)  { ++pc; *(int*)je = 0x840fc085; je = je + 8; } // test %eax, %eax; jz <off32>
     else if (i == BNZ) { ++pc; *(int*)je = 0x850fc085; je = je + 8; } // test %eax, %eax; jnz <off32>
     else if (i >= OPEN) {
-      if      (i == OPEN) tmp = (int)open;   else if (i == READ) tmp = (int)read;
-      else if (i == CLOS) tmp = (int)close;  else if (i == PRTF) tmp = (int)printf;
-      else if (i == MALC) tmp = (int)malloc; else if (i == MSET) tmp = (int)memset;
-      else if (i == MCMP) tmp = (int)memcmp; else if (i == EXIT) tmp = (int)exit;
+      if      (i == OPEN) tmp = (int)dlsym(0, "open");   else if (i == READ) tmp = (int)dlsym(0, "read");
+      else if (i == CLOS) tmp = (int)dlsym(0, "close");  else if (i == PRTF) tmp = (int)dlsym(0, "printf");
+      else if (i == MALC) tmp = (int)dlsym(0, "malloc"); else if (i == MSET) tmp = (int)dlsym(0, "memset");
+      else if (i == MCMP) tmp = (int)dlsym(0, "memcmp");
+      else if (i == MMAP) tmp = (int)dlsym(0, "mmap");   else if (i == DSYM) tmp = (int)dlsym(0, "dlsym");
+      else if (i == QSRT) tmp = (int)dlsym(0, "qsort");  else if (i == EXIT) tmp = (int)dlsym(0, "exit");
       if (*pc++ == ADJ) { i = *pc++; } else { printf("no ADJ after native proc!\n"); exit(2); }
       *je++ = 0xb9; *(int*)je = i << 2; je = je + 4;  // movl $(4 * n), %ecx;
       *(int*)je = 0xce29e689; je = je + 4; // mov %esp, %esi; sub %ecx, %esi;  -- %esi will adjust the stack
@@ -537,7 +540,7 @@ int main(int argc, char **argv)
   memset(data, 0, poolsz);
 
   p = "char else enum if int return sizeof while "
-      "open read close printf malloc memset memcmp mmap qsort exit void main";
+      "open read close printf malloc memset memcmp mmap dlsym qsort exit void main";
   i = Char; while (i <= While) { next(); id[Tk] = i++; } // add keywords to symbol table
   i = OPEN; while (i <= EXIT) { next(); id[Class] = Sys; id[Type] = INT; id[Val] = i++; } // add library to symbol table
   next(); id[Tk] = Char; // handle void type
