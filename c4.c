@@ -408,19 +408,11 @@ int run(int poolsz, int *start, int argc, char **argv)
   }
 }
 
-int jit(int poolsz, int *start, int argc, char **argv)
+char *codegen(char *jitmem)
 {
   int *pc;
   int i, tmp;        // temps
   char *je, *tje;    // current position in emitted native code
-  char *jitmem;      // executable memory for JIT-compiled native code
-  char *jitmain;
-
-  // setup jit memory
-  // PROT_EXEC | PROT_READ | PROT_WRITE = 7
-  // MAP_PRIVATE | MAP_ANON = 0x22
-  jitmem = mmap(0, poolsz, 7, 0x22, -1, 0);
-  if (!jitmem) { printf("could not mmap(%d) jit executable memory\n", poolsz); return -1; }
 
   // first pass: emit native code
   pc = text + 1; je = jitmem; line = 0;
@@ -428,11 +420,11 @@ int jit(int poolsz, int *start, int argc, char **argv)
     i = *pc;
     *pc++ = ((int)je << 8) | i; // for later relocation of JMP/JSR/BZ/BNZ
     if (i == LEA) {
-      i = 4 * *pc++; if (i < -128 || i > 127) { printf("jit: LEA out of bounds\n"); return -1; }
+      i = 4 * *pc++; if (i < -128 || i > 127) { printf("jit: LEA out of bounds\n"); return 0; }
       *(int*)je = 0x458d; je = je + 2; *je++ = i;  // leal $(4 * n)(%ebp), %eax
     }
     else if (i == ENT) {
-      i = 4 * *pc++; if (i < -128 || i > 127) { printf("jit: ENT out of bounds\n"); return -1; }
+      i = 4 * *pc++; if (i < -128 || i > 127) { printf("jit: ENT out of bounds\n"); return 0; }
       *(int *)je = 0xe58955; je = je + 3;  // push %ebp; movl %esp, %ebp
       if (i > 0) { *(int *)je = 0xec83; je = je + 2; *(int*)je++ = i; } // subl $(i*4), %esp
     }
@@ -484,7 +476,7 @@ int jit(int poolsz, int *start, int argc, char **argv)
       *(int*)je = tmp - (int)(je + 4); je = je + 4; // <*tmp offset>;
       *(int*)je = 0xf487; je = je + 2;     // xchg %esi, %esp  -- ADJ, back to old stack without arguments
     }
-    else { printf("code generation failed for %d!\n", i); return -1; }
+    else { printf("code generation failed for %d!\n", i); return 0; }
   }
   tje = je;
 
@@ -500,19 +492,31 @@ int jit(int poolsz, int *start, int argc, char **argv)
     }
     else if (i < LEV) { ++pc; }
   }
+  return tje;
+}
 
-  if (!src) {
-    je = tje;
-    jitmain = (char *)(((*(int *)start >> 8) & 0x00ffffff) | ((int)jitmem & 0xff000000));
-    *je++ = 0x56;                                                     // push %esi
-    *je++ = 0xb8; *(int *)   je = argc; je = je+4; *je++ = 0x50;      // movl $argc, %eax; push %eax
-    *je++ = 0xb8; *(char ***)je = argv; je = je+4; *je++ = 0x50;      // movl $argv, %eax; push %eax
-    *je++ = 0xe8; *(int *)je = (int)jitmain - (int)je - 4; je = je+4; // call main
-    *je++ = 0x83; *je++ = 0xc4; *je++ = 8;                            // add $8, %esp
-    *je++ = 0x5e;                                                     // pop %esi
-    *je++ = 0xc3;                                                     // ret
-    qsort(sym, 2, 1, (void *)tje); // hack to call a function pointer
-  }
+int jit(int poolsz, int *start, int argc, char **argv)
+{
+  char *jitmem;      // executable memory for JIT-compiled native code
+  char *jitmain, *je, *tje;
+
+  // setup jit memory
+  // PROT_EXEC | PROT_READ | PROT_WRITE = 7
+  // MAP_PRIVATE | MAP_ANON = 0x22
+  jitmem = mmap(0, poolsz, 7, 0x22, -1, 0);
+  if (!jitmem) { printf("could not mmap(%d) jit executable memory\n", poolsz); return -1; }
+  if (src || !(je = tje = codegen(jitmem)))
+    return 1;
+
+  jitmain = (char *)(((*(int *)start >> 8) & 0x00ffffff) | ((int)jitmem & 0xff000000));
+  *je++ = 0x56;                                                     // push %esi
+  *je++ = 0xb8; *(int *)   je = argc; je = je+4; *je++ = 0x50;      // movl $argc, %eax; push %eax
+  *je++ = 0xb8; *(char ***)je = argv; je = je+4; *je++ = 0x50;      // movl $argv, %eax; push %eax
+  *je++ = 0xe8; *(int *)je = (int)jitmain - (int)je - 4; je = je+4; // call main
+  *je++ = 0x83; *je++ = 0xc4; *je++ = 8;                            // add $8, %esp
+  *je++ = 0x5e;                                                     // pop %esi
+  *je++ = 0xc3;                                                     // ret
+  qsort(sym, 2, 1, (void *)tje); // hack to call a function pointer
   return 0;
 }
 
