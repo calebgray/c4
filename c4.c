@@ -20,7 +20,7 @@
 #endif
 
 char *p, *lp, // current position in source code
-     *data;   // data/bss pointer
+     *data, *_data;   // data/bss pointer
 
 int *e, *le, *text,  // current position in emitted code
     *id,      // currently parsed identifier
@@ -520,18 +520,90 @@ int jit(int poolsz, int *start, int argc, char **argv)
   return 0;
 }
 
+int elf32(int poolsz, int *start)
+{
+  char *o, *buf, *code, *entry, *je, *tje;
+  int *code_offset, *data_offset;
+
+  code = malloc(poolsz);
+  buf = malloc(poolsz);
+  memset(buf, 0, poolsz);
+  o = buf = (char*)(((int)buf + 4095)  & -4096);
+  code =    (char*)(((int)code + 4095) & -4096);
+  tje = je = codegen(code);
+  if (!je)
+    return 1;
+
+  entry = (char *)(((*(int *)start >> 8) & 0x00ffffff) | ((int)code & 0xff000000));
+  *je++ = 0x56;                                                    // push %esi
+  *je++ = 0xb8; *(int *)   je = 0; je = je+4; *je++ = 0x50;      // movl $argc, %eax; push %eax
+  *je++ = 0xb8; *(char ***)je = 0; je = je+4; *je++ = 0x50;      // movl $argv, %eax; push %eax
+  *je++ = 0xe8; *(int *)je = (int)entry - (int)je - 4; je = je+4; // call main
+  *je++ = 0x89; *je++ = 0xc3;               // mov    %eax,%ebx
+  *je++ = 0xb8; *(int*)je = 1; je = je + 4; // mov    $0x1,%eax
+  *je++ = 0xcd; *je++ = 0x80;               // qint    $0x80
+
+  // elf32_hdr
+  *o++ = 0x7f; *o++ = 'E'; *o++ = 'L'; *o++ = 'F';
+  *o++ = 1;    *o++ = 1;   *o++ = 1;   *o++ = 0;
+  o = o + 8;
+  *o++ = 2; *o++ = 0; *o++ = 3; *o++ = 0;
+  *(int*)o = 1;           o = o + 4;
+  *(int*)o = (int)tje;  o = o + 4;
+  *(int*)o = 52;          o = o + 4; // e_phoff
+  *(int*)o = 0;           o = o + 4; // e_shoff
+  *(int*)o = 0;           o = o + 4; // e_flags
+  *o++ = 52; *o++ = 0;
+  *o++ = 32; *o++ = 0; *o++ = 2; *o++ = 0; // e_phentsize & e_phnum
+  *o++ =  0; *o++ = 0; *o++ = 0; *o++ = 0; // e_shentsize & e_shnum
+  *o++ =  0; *o++ = 0;
+
+  je   = (char*)(((int)je + 4095) & -4096);
+  data = (char*)(((int)data + 4095) & -4096);
+
+  // elf32_phdr[2]
+  *(int*)o = 1;               o = o + 4;
+  code_offset = (int*)o;      o = o + 4;
+  *(int*)o = (int)code;       o = o + 4;
+  *(int*)o = (int)code;       o = o + 4;
+  *(int*)o = je - code;       o = o + 4;
+  *(int*)o = je - code;       o = o + 4;
+  *(int*)o = 5;               o = o + 4;
+  *(int*)o = 0x1000;          o = o + 4;
+
+  *(int*)o = 1;               o = o + 4;
+  data_offset = (int*)o;      o = o + 4;
+  *(int*)o = (int)_data;      o = o + 4;
+  *(int*)o = (int)_data;      o = o + 4;
+  *(int*)o = data - _data;    o = o + 4;
+  *(int*)o = data - _data;    o = o + 4;
+  *(int*)o = 6;               o = o + 4;
+  *(int*)o = 0x1000;          o = o + 4;
+
+  o = (char*)(((int)o + 4095) & -4096);
+
+  *code_offset = o - buf; memcpy(o, code,  je - code);    o = o + (je - code);
+  *data_offset = o - buf; memcpy(o, _data, data - _data); o = o + (data - _data);
+
+  write(1, buf, o - buf);
+  return 0;
+}
+
 int main(int argc, char **argv)
 {
   int fd, bt, ty, poolsz, *idmain;
-  int i, usejit; // temps
+  int i, usejit, writeelf; // temps
 
   usejit = 0;
+  writeelf = 0;
   --argc; ++argv;
   if (argc > 0 && **argv == '-' && (*argv)[1] == 's') { src = 1; --argc; ++argv; }
   if (argc > 0 && **argv == '-' && (*argv)[1] == 'd') { debug = 1; --argc; ++argv; }
   if (argc > 0 && **argv == '-' && (*argv)[1] == 'j') { usejit = 1; --argc; ++argv; }
+  if (argc > 0 && **argv == '-' && (*argv)[1] == 'o') { writeelf = 1; --argc; ++argv; }
   if (argc < 1) { printf("usage: c4 [-s] [-d] file ...\n"); return -1; }
   if (usejit && sizeof(int) != 4) { printf("jitting only works on 32-bit version\n"); return -1; }
+  if (writeelf && sizeof(int) != 4) { printf("only support elf32\n"); return -1; }
 
   if ((fd = open(*argv, 0)) < 0) { printf("could not open(%s)\n", *argv); return -1; }
 
@@ -543,6 +615,8 @@ int main(int argc, char **argv)
   memset(sym,  0, poolsz);
   memset(e,    0, poolsz);
   memset(data, 0, poolsz);
+  if (writeelf)
+    data = _data = (char*)(((int)data + 4095) & -4096);
 
   p = "char else enum if int return sizeof while "
       "open read close printf malloc memset memcmp mmap dlsym qsort exit void main";
@@ -650,6 +724,8 @@ int main(int argc, char **argv)
     }
     next();
   }
+  if (writeelf)
+    return elf32(poolsz, (int *)idmain[Val]);
   if (usejit)
     return jit(poolsz, (int *)idmain[Val], argc, argv);
   return run(poolsz, (int *)idmain[Val], argc, argv);

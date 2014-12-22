@@ -12,6 +12,12 @@ Try the following:
     ./c4 c4.c hello.c
     ./c4 c4.c c4.c hello.c
 
+To produce an executable, try
+
+    ./c4 -o hello.c >hello
+    chmod 755 hello
+    ./hello
+
 To enable all warnings from gcc, use:
 
     gcc -o c4 c4.c -ldl -Wall -Wno-parentheses
