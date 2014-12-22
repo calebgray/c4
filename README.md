@@ -14,4 +14,4 @@ Try the following:
 
 To enable all warnings from gcc, use:
 
-    gcc -o c4 c4.c -ldl -Wall -Wno-return-type -Wno-implicit-int -Wno-parentheses -Wno-implicit-function-declaration
+    gcc -o c4 c4.c -ldl -Wall -Wno-parentheses
