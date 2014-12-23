@@ -408,7 +408,7 @@ int run(int poolsz, int *start, int argc, char **argv)
   }
 }
 
-char *codegen(char *jitmem)
+char *codegen(char *jitmem, int reloc)
 {
   int *pc;
   int i, tmp;        // temps
@@ -460,7 +460,10 @@ char *codegen(char *jitmem)
     else if (i == BZ)  { ++pc; *(int*)je = 0x840fc085; je = je + 8; } // test %eax, %eax; jz <off32>
     else if (i == BNZ) { ++pc; *(int*)je = 0x850fc085; je = je + 8; } // test %eax, %eax; jnz <off32>
     else if (i >= OPEN) {
-      if      (i == OPEN) tmp = (int)dlsym(0, "open");   else if (i == READ) tmp = (int)dlsym(0, "read");
+      if (reloc) {
+        if (i == PRTF) tmp = (int)_data + 4;
+      }
+      else if (i == OPEN) tmp = (int)dlsym(0, "open");   else if (i == READ) tmp = (int)dlsym(0, "read");
       else if (i == CLOS) tmp = (int)dlsym(0, "close");  else if (i == PRTF) tmp = (int)dlsym(0, "printf");
       else if (i == MALC) tmp = (int)dlsym(0, "malloc"); else if (i == MSET) tmp = (int)dlsym(0, "memset");
       else if (i == MCMP) tmp = (int)dlsym(0, "memcmp");
@@ -472,8 +475,15 @@ char *codegen(char *jitmem)
       *(int*)je = 0x8302e9c1; je = je + 4; // shr $2, %ecx; and                -- alignment of %esp for OS X
       *(int*)je = 0x895af0e6; je = je + 4; // $0xfffffff0, %esi; pop %edx; mov..
       *(int*)je = 0xe2fc8e54; je = je + 4; // ..%edx, -4(%esi,%ecx,4); loop..  -- reversing args order
-      *(int*)je = 0xe8f487f9; je = je + 4; // ..<'pop' offset>; xchg %esi, %esp; call    -- saving old stack in %esi
-      *(int*)je = tmp - (int)(je + 4); je = je + 4; // <*tmp offset>;
+      if (reloc) {
+        *(int*)je = 0xf487f9; je = je + 3; // ..<'pop' offset>; xchg %esi, %esp;         -- saving old stack in %esi
+        *je++ = 0xb8; *(int*)je = tmp; je = je + 4; // mov $reloc, %eax
+        *je++ = 0xff; *je++ = 0x10;                 // call *(%eax)
+      }
+      else {
+        *(int*)je = 0xe8f487f9; je = je + 4; // ..<'pop' offset>; xchg %esi, %esp; call    -- saving old stack in %esi
+        *(int*)je = tmp - (int)(je + 4); je = je + 4; // <*tmp offset>;
+      }
       *(int*)je = 0xf487; je = je + 2;     // xchg %esi, %esp  -- ADJ, back to old stack without arguments
     }
     else { printf("code generation failed for %d!\n", i); return 0; }
@@ -505,7 +515,7 @@ int jit(int poolsz, int *start, int argc, char **argv)
   // MAP_PRIVATE | MAP_ANON = 0x22
   jitmem = mmap(0, poolsz, 7, 0x22, -1, 0);
   if (!jitmem) { printf("could not mmap(%d) jit executable memory\n", poolsz); return -1; }
-  if (src || !(je = tje = codegen(jitmem)))
+  if (src || !(je = tje = codegen(jitmem, 0)))
     return 1;
 
   jitmain = (char *)(((*(int *)start >> 8) & 0x00ffffff) | ((int)jitmem & 0xff000000));
@@ -524,8 +534,8 @@ int elf32(int poolsz, int *start)
 {
   char *o, *buf, *code, *entry, *je, *tje;
   char *to, *phdr, *dseg;
-  char *pt_dyn, *strtab, *libc, *ldso, *linker, *symtab;
-  int pt_dyn_off, linker_off;
+  char *pt_dyn, *strtab, *libc, *ldso, *linker, *symtab, *sym, *rel;
+  int pt_dyn_off, linker_off, *ti;
 
   code = malloc(poolsz);
   buf = malloc(poolsz);
@@ -535,7 +545,7 @@ int elf32(int poolsz, int *start)
   // the first 4k in this address space is for elf header, especially
   // elf_phdr because ld.so must be able to see it
   code = code + 4096;
-  tje = je = codegen(code);
+  tje = je = codegen(code, 1);
   if (!je)
     return 1;
 
@@ -567,10 +577,12 @@ int elf32(int poolsz, int *start)
   o = (char*)(((int)o + 4095)  & -4096);
   memcpy(o, code,  je - code); o = o + 4096;
   dseg = o; o = o + 4096;
-  pt_dyn = data; pt_dyn_off = dseg - buf + (data - _data); data = data + 64;
+  pt_dyn = data; pt_dyn_off = dseg - buf + (data - _data); data = data + 96;
   linker = data; memcpy(linker, "/lib/ld-linux.so.2", 19);
-  linker_off = pt_dyn_off + 64; data = data + 19;
+  linker_off = pt_dyn_off + 96; data = data + 19;
   strtab = data; data = data + 64;
+  symtab = data; data = data + 64;
+  rel = data; data = data + 64;
 
   // PT_LOAD for code
   to = phdr;
@@ -595,15 +607,25 @@ int elf32(int poolsz, int *start)
   // PT_DYNAMIC
   *(int*)to = 2;           to = to + 4; *(int*)to = pt_dyn_off; to = to + 4;
   *(int*)to = (int)pt_dyn; to = to + 4; *(int*)to = (int)pt_dyn;  to = to + 4;
-  *(int*)to = 64;          to = to + 4; *(int*)to = 64;           to = to + 4;
+  *(int*)to = 80;          to = to + 4; *(int*)to = 80;           to = to + 4;
   *(int*)to = 4;           to = to + 4; *(int*)to = 16;           to = to + 4;
 
   // .dynstr (embedded in PT_LOAD of data)
   to = strtab;
   libc = to = to +  1; memcpy(to, "libc.so.6", 10);
   ldso = to = to + 10; memcpy(to, "libdl.so.2", 11);
-  symtab = to;
-  to = to + 16; // first entry needed for undefined symbol
+  sym = to + 11;
+
+  ti = (int*)symtab;
+  ti = ti + 4; // first entry needed for undefined symbol
+  memcpy(sym, "dlsym", 6);
+  ti[0] = sym - strtab; ti[3] = 0x12; ti = ti + 4; sym = sym + 6;
+  memcpy(sym, "printf", 7);
+  ti[0] = sym - strtab; ti[3] = 0x12; ti = ti + 4; sym = sym + 7;
+
+  ti = (int*)rel;
+  ti[0] = (int)_data;     ti[1] = 0x0101; ti = ti + 2;
+  ti[0] = (int)_data + 4; ti[1] = 0x0201; ti = ti + 2;
 
   // .dynamic (embedded in PT_LOAD of data)
   to = pt_dyn;
@@ -611,6 +633,9 @@ int elf32(int poolsz, int *start)
   *(int*)to = 10; to = to + 4; *(int*)to = symtab - strtab; to = to + 4;
   *(int*)to = 6; to = to + 4; *(int*)to = (int)symtab; to = to + 4;
   *(int*)to = 11; to = to + 4; *(int*)to = 16; to = to + 4;
+  *(int*)to = 17; to = to + 4; *(int*)to = (int)rel; to = to + 4;
+  *(int*)to = 18; to = to + 4; *(int*)to = (char*)ti - rel; to = to + 4;
+  *(int*)to = 19; to = to + 4; *(int*)to = 8; to = to + 4;
   *(int*)to = 1; to = to + 4; *(int*)to = libc - strtab; to = to + 4;
   *(int*)to = 1; to = to + 4; *(int*)to = ldso - strtab; to = to + 4;
   *(int*)to = 0; to = to + 4;
@@ -646,8 +671,10 @@ int main(int argc, char **argv)
   memset(sym,  0, poolsz);
   memset(e,    0, poolsz);
   memset(data, 0, poolsz);
-  if (writeelf)
-    data = _data = (char*)(((int)data + 4095) & -4096);
+  if (writeelf) {
+    _data = (char*)(((int)data + 4095) & -4096);
+    data = _data + 64; // space space for relocs
+  }
 
   p = "char else enum if int return sizeof while "
       "open read close printf malloc memset memcmp mmap dlsym qsort exit void main";
