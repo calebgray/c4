@@ -541,7 +541,7 @@ int elf32(int poolsz, int *start)
   *je++ = 0xe8; *(int *)je = (int)entry - (int)je - 4; je = je+4; // call main
   *je++ = 0x89; *je++ = 0xc3;               // mov    %eax,%ebx
   *je++ = 0xb8; *(int*)je = 1; je = je + 4; // mov    $0x1,%eax
-  *je++ = 0xcd; *je++ = 0x80;               // qint    $0x80
+  *je++ = 0xcd; *je++ = 0x80;               // int    $0x80
 
   // elf32_hdr
   *o++ = 0x7f; *o++ = 'E'; *o++ = 'L'; *o++ = 'F';
@@ -549,7 +549,7 @@ int elf32(int poolsz, int *start)
   o = o + 8;
   *o++ = 2; *o++ = 0; *o++ = 3; *o++ = 0;
   *(int*)o = 1;           o = o + 4;
-  *(int*)o = (int)tje;  o = o + 4;
+  *(int*)o = (int)tje;    o = o + 4;
   *(int*)o = 52;          o = o + 4; // e_phoff
   *(int*)o = 0;           o = o + 4; // e_shoff
   *(int*)o = 0;           o = o + 4; // e_flags
@@ -562,23 +562,15 @@ int elf32(int poolsz, int *start)
   data = (char*)(((int)data + 4095) & -4096);
 
   // elf32_phdr[2]
-  *(int*)o = 1;               o = o + 4;
-  code_offset = (int*)o;      o = o + 4;
-  *(int*)o = (int)code;       o = o + 4;
-  *(int*)o = (int)code;       o = o + 4;
-  *(int*)o = je - code;       o = o + 4;
-  *(int*)o = je - code;       o = o + 4;
-  *(int*)o = 5;               o = o + 4;
-  *(int*)o = 0x1000;          o = o + 4;
+  *(int*)o = 1;         o = o + 4; code_offset = (int*)o; o = o + 4;
+  *(int*)o = (int)code; o = o + 4; *(int*)o = (int)code;  o = o + 4;
+  *(int*)o = je - code; o = o + 4; *(int*)o = je - code;  o = o + 4;
+  *(int*)o = 5;         o = o + 4; *(int*)o = 0x1000;     o = o + 4;
 
-  *(int*)o = 1;               o = o + 4;
-  data_offset = (int*)o;      o = o + 4;
-  *(int*)o = (int)_data;      o = o + 4;
-  *(int*)o = (int)_data;      o = o + 4;
-  *(int*)o = data - _data;    o = o + 4;
-  *(int*)o = data - _data;    o = o + 4;
-  *(int*)o = 6;               o = o + 4;
-  *(int*)o = 0x1000;          o = o + 4;
+  *(int*)o = 1;            o = o + 4; data_offset = (int*)o;   o = o + 4;
+  *(int*)o = (int)_data;   o = o + 4; *(int*)o = (int)_data;   o = o + 4;
+  *(int*)o = data - _data; o = o + 4; *(int*)o = data - _data; o = o + 4;
+  *(int*)o = 6;            o = o + 4; *(int*)o = 0x1000;       o = o + 4;
 
   o = (char*)(((int)o + 4095) & -4096);
 
