@@ -523,7 +523,7 @@ int jit(int poolsz, int *start, int argc, char **argv)
 int elf32(int poolsz, int *start)
 {
   char *o, *buf, *code, *entry, *je, *tje;
-  int *code_offset, *data_offset;
+  char *to, *phdr, *cseg, *dseg;
 
   code = malloc(poolsz);
   buf = malloc(poolsz);
@@ -558,24 +558,22 @@ int elf32(int poolsz, int *start)
   *o++ =  0; *o++ = 0; *o++ = 0; *o++ = 0; // e_shentsize & e_shnum
   *o++ =  0; *o++ = 0;
 
-  je   = (char*)(((int)je + 4095) & -4096);
-  data = (char*)(((int)data + 4095) & -4096);
+  phdr = o; o = o + 32 * 10;
+  o = (char*)(((int)o + 4095)  & -4096);
+  memcpy(o, code,  je - code);    cseg = o; o = o + 4096;
+  memcpy(o, _data, data - _data); dseg = o; o = o + 4096;
 
-  // elf32_phdr[2]
-  *(int*)o = 1;         o = o + 4; code_offset = (int*)o; o = o + 4;
-  *(int*)o = (int)code; o = o + 4; *(int*)o = (int)code;  o = o + 4;
-  *(int*)o = je - code; o = o + 4; *(int*)o = je - code;  o = o + 4;
-  *(int*)o = 5;         o = o + 4; *(int*)o = 0x1000;     o = o + 4;
+  // elf32_phdr[3]
+  to = phdr;
+  *(int*)to = 1;         to = to + 4; *(int*)to = cseg - buf; to = to + 4;
+  *(int*)to = (int)code; to = to + 4; *(int*)to = (int)code;  to = to + 4;
+  *(int*)to = 4096;      to = to + 4; *(int*)to = 4096;       to = to + 4;
+  *(int*)to = 5;         to = to + 4; *(int*)to = 0x1000;     to = to + 4;
 
-  *(int*)o = 1;            o = o + 4; data_offset = (int*)o;   o = o + 4;
-  *(int*)o = (int)_data;   o = o + 4; *(int*)o = (int)_data;   o = o + 4;
-  *(int*)o = data - _data; o = o + 4; *(int*)o = data - _data; o = o + 4;
-  *(int*)o = 6;            o = o + 4; *(int*)o = 0x1000;       o = o + 4;
-
-  o = (char*)(((int)o + 4095) & -4096);
-
-  *code_offset = o - buf; memcpy(o, code,  je - code);    o = o + (je - code);
-  *data_offset = o - buf; memcpy(o, _data, data - _data); o = o + (data - _data);
+  *(int*)to = 1;            to = to + 4; *(int*)to = dseg - buf;   to = to + 4;
+  *(int*)to = (int)_data;   to = to + 4; *(int*)to = (int)_data;   to = to + 4;
+  *(int*)to = 4096;         to = to + 4; *(int*)to = 4096;         to = to + 4;
+  *(int*)to = 6;            to = to + 4; *(int*)to = 0x1000;       to = to + 4;
 
   write(1, buf, o - buf);
   return 0;
