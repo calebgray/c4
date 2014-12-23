@@ -535,9 +535,9 @@ int elf32(int poolsz, int *start)
     return 1;
 
   entry = (char *)(((*(int *)start >> 8) & 0x00ffffff) | ((int)code & 0xff000000));
-  *je++ = 0x56;                                                    // push %esi
-  *je++ = 0xb8; *(int *)   je = 0; je = je+4; *je++ = 0x50;      // movl $argc, %eax; push %eax
-  *je++ = 0xb8; *(char ***)je = 0; je = je+4; *je++ = 0x50;      // movl $argv, %eax; push %eax
+  *je++ = 0x89; *je++ = 0xe0;                // mov    %esp,%eax
+  *je++ = 0x83; *je++ = 0xc0; *je++ = 0x04;  // add    $0x4,%eax
+  *je++ = 0x50;                              // push   %eax
   *je++ = 0xe8; *(int *)je = (int)entry - (int)je - 4; je = je+4; // call main
   *je++ = 0x89; *je++ = 0xc3;               // mov    %eax,%ebx
   *je++ = 0xb8; *(int*)je = 1; je = je + 4; // mov    $0x1,%eax
