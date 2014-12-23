@@ -523,7 +523,7 @@ int jit(int poolsz, int *start, int argc, char **argv)
 int elf32(int poolsz, int *start)
 {
   char *o, *buf, *code, *entry, *je, *tje;
-  char *to, *phdr, *cseg, *dseg;
+  char *to, *phdr, *dseg;
   char *pt_dyn, *strtab, *libc, *ldso, *linker, *symtab;
   int pt_dyn_off, linker_off;
 
@@ -532,6 +532,9 @@ int elf32(int poolsz, int *start)
   memset(buf, 0, poolsz);
   o = buf = (char*)(((int)buf + 4095)  & -4096);
   code =    (char*)(((int)code + 4095) & -4096);
+  // the first 4k in this address space is for elf header, especially
+  // elf_phdr because ld.so must be able to see it
+  code = code + 4096;
   tje = je = codegen(code);
   if (!je)
     return 1;
@@ -562,7 +565,7 @@ int elf32(int poolsz, int *start)
 
   phdr = o; o = o + 32 * 10;
   o = (char*)(((int)o + 4095)  & -4096);
-  memcpy(o, code,  je - code);    cseg = o; o = o + 4096;
+  memcpy(o, code,  je - code); o = o + 4096;
   dseg = o; o = o + 4096;
   pt_dyn = data; pt_dyn_off = dseg - buf + (data - _data); data = data + 64;
   linker = data; memcpy(linker, "/lib/ld-linux.so.2", 19);
@@ -571,9 +574,10 @@ int elf32(int poolsz, int *start)
 
   // PT_LOAD for code
   to = phdr;
-  *(int*)to = 1;         to = to + 4; *(int*)to = cseg - buf; to = to + 4;
-  *(int*)to = (int)code; to = to + 4; *(int*)to = (int)code;  to = to + 4;
-  *(int*)to = 4096;      to = to + 4; *(int*)to = 4096;       to = to + 4;
+  *(int*)to = 1;         to = to + 4; *(int*)to = 0; to = to + 4;
+  *(int*)to = (int)code - 4096; to = to + 4;
+  *(int*)to = (int)code - 4096;  to = to + 4;
+  *(int*)to = 4096 * 2;      to = to + 4; *(int*)to = 4096 * 2;       to = to + 4;
   *(int*)to = 5;         to = to + 4; *(int*)to = 0x1000;     to = to + 4;
 
   // PT_LOAD for data
