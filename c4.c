@@ -524,6 +524,8 @@ int elf32(int poolsz, int *start)
 {
   char *o, *buf, *code, *entry, *je, *tje;
   char *to, *phdr, *cseg, *dseg;
+  char *pt_dyn, *strtab, *libc, *ldso, *linker, *symtab;
+  int pt_dyn_off, linker_off;
 
   code = malloc(poolsz);
   buf = malloc(poolsz);
@@ -554,27 +556,62 @@ int elf32(int poolsz, int *start)
   *(int*)o = 0;           o = o + 4; // e_shoff
   *(int*)o = 0;           o = o + 4; // e_flags
   *o++ = 52; *o++ = 0;
-  *o++ = 32; *o++ = 0; *o++ = 2; *o++ = 0; // e_phentsize & e_phnum
+  *o++ = 32; *o++ = 0; *o++ = 4; *o++ = 0; // e_phentsize & e_phnum
   *o++ =  0; *o++ = 0; *o++ = 0; *o++ = 0; // e_shentsize & e_shnum
   *o++ =  0; *o++ = 0;
 
   phdr = o; o = o + 32 * 10;
   o = (char*)(((int)o + 4095)  & -4096);
   memcpy(o, code,  je - code);    cseg = o; o = o + 4096;
-  memcpy(o, _data, data - _data); dseg = o; o = o + 4096;
+  dseg = o; o = o + 4096;
+  pt_dyn = data; pt_dyn_off = dseg - buf + (data - _data); data = data + 64;
+  linker = data; memcpy(linker, "/lib/ld-linux.so.2", 19);
+  linker_off = pt_dyn_off + 64; data = data + 19;
+  strtab = data; data = data + 64;
 
-  // elf32_phdr[3]
+  // PT_LOAD for code
   to = phdr;
   *(int*)to = 1;         to = to + 4; *(int*)to = cseg - buf; to = to + 4;
   *(int*)to = (int)code; to = to + 4; *(int*)to = (int)code;  to = to + 4;
   *(int*)to = 4096;      to = to + 4; *(int*)to = 4096;       to = to + 4;
   *(int*)to = 5;         to = to + 4; *(int*)to = 0x1000;     to = to + 4;
 
+  // PT_LOAD for data
   *(int*)to = 1;            to = to + 4; *(int*)to = dseg - buf;   to = to + 4;
   *(int*)to = (int)_data;   to = to + 4; *(int*)to = (int)_data;   to = to + 4;
   *(int*)to = 4096;         to = to + 4; *(int*)to = 4096;         to = to + 4;
   *(int*)to = 6;            to = to + 4; *(int*)to = 0x1000;       to = to + 4;
 
+  // PT_INTERP
+  *(int*)to = 3;           to = to + 4; *(int*)to = linker_off;  to = to + 4;
+  *(int*)to = (int)linker; to = to + 4; *(int*)to = (int)linker; to = to + 4;
+  *(int*)to = 19;          to = to + 4; *(int*)to = 19;          to = to + 4;
+  *(int*)to = 4;           to = to + 4; *(int*)to = 1;           to = to + 4;
+
+  // PT_DYNAMIC
+  *(int*)to = 2;           to = to + 4; *(int*)to = pt_dyn_off; to = to + 4;
+  *(int*)to = (int)pt_dyn; to = to + 4; *(int*)to = (int)pt_dyn;  to = to + 4;
+  *(int*)to = 64;          to = to + 4; *(int*)to = 64;           to = to + 4;
+  *(int*)to = 4;           to = to + 4; *(int*)to = 16;           to = to + 4;
+
+  // .dynstr (embedded in PT_LOAD of data)
+  to = strtab;
+  libc = to = to +  1; memcpy(to, "libc.so.6", 10);
+  ldso = to = to + 10; memcpy(to, "libdl.so.2", 11);
+  symtab = to;
+  to = to + 16; // first entry needed for undefined symbol
+
+  // .dynamic (embedded in PT_LOAD of data)
+  to = pt_dyn;
+  *(int*)to = 5; to = to + 4; *(int*)to = (int)strtab;   to = to + 4;
+  *(int*)to = 10; to = to + 4; *(int*)to = symtab - strtab; to = to + 4;
+  *(int*)to = 6; to = to + 4; *(int*)to = (int)symtab; to = to + 4;
+  *(int*)to = 11; to = to + 4; *(int*)to = 16; to = to + 4;
+  *(int*)to = 1; to = to + 4; *(int*)to = libc - strtab; to = to + 4;
+  *(int*)to = 1; to = to + 4; *(int*)to = ldso - strtab; to = to + 4;
+  *(int*)to = 0; to = to + 4;
+
+  memcpy(dseg, _data, data - _data);
   write(1, buf, o - buf);
   return 0;
 }
