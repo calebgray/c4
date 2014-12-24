@@ -576,7 +576,8 @@ int elf32(int poolsz, int *start)
 
   phdr = o; o = o + 32 * 10;
   o = (char*)(((int)o + 4095)  & -4096);
-  memcpy(o, code,  je - code); o = o + 4096;
+  je = (char*)(((int)je + 4095)  & -4096);
+  memcpy(o, code,  je - code); o = o + (je - code);
   dseg = o; o = o + 4096;
   pt_dyn = data; pt_dyn_off = dseg - buf + (data - _data); data = data + 96;
   linker = data; memcpy(linker, "/lib/ld-linux.so.2", 19);
@@ -591,7 +592,8 @@ int elf32(int poolsz, int *start)
   *(int*)to = 1;         to = to + 4; *(int*)to = 0; to = to + 4;
   *(int*)to = (int)code - 4096; to = to + 4;
   *(int*)to = (int)code - 4096;  to = to + 4;
-  *(int*)to = 4096 * 2;      to = to + 4; *(int*)to = 4096 * 2;       to = to + 4;
+  *(int*)to = 4096 + (je - code); to = to + 4;
+  *(int*)to = 4096 + (je - code); to = to + 4;
   *(int*)to = 5;         to = to + 4; *(int*)to = 0x1000;     to = to + 4;
 
   // PT_LOAD for data

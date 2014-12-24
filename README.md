@@ -14,9 +14,9 @@ Try the following:
 
 To produce an executable, try
 
-    ./c4 -o hello.c >hello
-    chmod 755 hello
-    ./hello
+    ./c4 -o c4.c >c8
+    chmod 755 c8
+    ./c8 hello.c
 
 To enable all warnings from gcc, use:
 
