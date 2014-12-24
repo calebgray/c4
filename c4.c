@@ -460,9 +460,7 @@ char *codegen(char *jitmem, int reloc)
     else if (i == BZ)  { ++pc; *(int*)je = 0x840fc085; je = je + 8; } // test %eax, %eax; jz <off32>
     else if (i == BNZ) { ++pc; *(int*)je = 0x850fc085; je = je + 8; } // test %eax, %eax; jnz <off32>
     else if (i >= OPEN) {
-      if (reloc) {
-        if (i == PRTF) tmp = (int)_data + 4;
-      }
+      if (reloc) tmp = (int)_data + (i - OPEN) * 4;
       else if (i == OPEN) tmp = (int)dlsym(0, "open");   else if (i == READ) tmp = (int)dlsym(0, "read");
       else if (i == CLOS) tmp = (int)dlsym(0, "close");  else if (i == PRTF) tmp = (int)dlsym(0, "printf");
       else if (i == MALC) tmp = (int)dlsym(0, "malloc"); else if (i == MSET) tmp = (int)dlsym(0, "memset");
@@ -535,7 +533,7 @@ int elf32(int poolsz, int *start)
   char *o, *buf, *code, *entry, *je, *tje;
   char *to, *phdr, *dseg;
   char *pt_dyn, *strtab, *libc, *ldso, *linker, *symtab, *sym, *rel;
-  int pt_dyn_off, linker_off, *ti;
+  int pt_dyn_off, linker_off, *ti, i, *ti2;
 
   code = malloc(poolsz);
   buf = malloc(poolsz);
@@ -580,9 +578,10 @@ int elf32(int poolsz, int *start)
   pt_dyn = data; pt_dyn_off = dseg - buf + (data - _data); data = data + 96;
   linker = data; memcpy(linker, "/lib/ld-linux.so.2", 19);
   linker_off = pt_dyn_off + 96; data = data + 19;
-  strtab = data; data = data + 64;
-  symtab = data; data = data + 64;
-  rel = data; data = data + 64;
+  data = (char*)(((int)data + 15) & -16);
+  strtab = data; data = data + 128;
+  symtab = data; data = data + (EXIT - OPEN + 2) * 16;
+  rel = data; data = data + (EXIT - OPEN + 1) * 8;
 
   // PT_LOAD for code
   to = phdr;
@@ -615,17 +614,21 @@ int elf32(int poolsz, int *start)
   libc = to = to +  1; memcpy(to, "libc.so.6", 10);
   ldso = to = to + 10; memcpy(to, "libdl.so.2", 11);
   sym = to + 11;
+  memcpy(sym,
+         "open   read   close  printf malloc memset memcmp mmap   dlsym  qsort  exit  ",
+         (EXIT - OPEN + 1) * 7);
+  to = sym; while (to < symtab) { if (*to == ' ') *to = 0; to++; }
 
   ti = (int*)symtab;
   ti = ti + 4; // first entry needed for undefined symbol
-  memcpy(sym, "dlsym", 6);
-  ti[0] = sym - strtab; ti[3] = 0x12; ti = ti + 4; sym = sym + 6;
-  memcpy(sym, "printf", 7);
-  ti[0] = sym - strtab; ti[3] = 0x12; ti = ti + 4; sym = sym + 7;
-
-  ti = (int*)rel;
-  ti[0] = (int)_data;     ti[1] = 0x0101; ti = ti + 2;
-  ti[0] = (int)_data + 4; ti[1] = 0x0201; ti = ti + 2;
+  ti2 = (int*)rel;
+  i = 0;
+  while (i <= EXIT - OPEN) {
+    ti[0] = sym + i * 7 - strtab; ti[3] = 0x12; ti = ti + 4;
+    *ti2++ = (int)_data + i * 4;
+    i = i + 1;
+    *ti2++ = (i << 8) | 1;
+  }
 
   // .dynamic (embedded in PT_LOAD of data)
   to = pt_dyn;
@@ -634,7 +637,7 @@ int elf32(int poolsz, int *start)
   *(int*)to = 6; to = to + 4; *(int*)to = (int)symtab; to = to + 4;
   *(int*)to = 11; to = to + 4; *(int*)to = 16; to = to + 4;
   *(int*)to = 17; to = to + 4; *(int*)to = (int)rel; to = to + 4;
-  *(int*)to = 18; to = to + 4; *(int*)to = (char*)ti - rel; to = to + 4;
+  *(int*)to = 18; to = to + 4; *(int*)to = (char*)ti2 - rel; to = to + 4;
   *(int*)to = 19; to = to + 4; *(int*)to = 8; to = to + 4;
   *(int*)to = 1; to = to + 4; *(int*)to = libc - strtab; to = to + 4;
   *(int*)to = 1; to = to + 4; *(int*)to = ldso - strtab; to = to + 4;
@@ -673,7 +676,9 @@ int main(int argc, char **argv)
   memset(data, 0, poolsz);
   if (writeelf) {
     _data = (char*)(((int)data + 4095) & -4096);
-    data = _data + 64; // space space for relocs
+    // save space for relocs from OPEN to EXIT, keep it 16 byte
+    // alignment, PT_DYNAMIC needs it.
+    data = _data + 64;
   }
 
   p = "char else enum if int return sizeof while "
