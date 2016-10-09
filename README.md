@@ -1,5 +1,4 @@
-c4 - C implementation in four functions
-========================
+# c4 - Tiny (and incomplete) C implementation in four functions.
 
 Use CMake, or try the following:
 

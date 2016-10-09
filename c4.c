@@ -1,4 +1,4 @@
-// c4.c - C in four functions
+// c4.c - Tiny (and incomplete) C implementation in four functions.
 
 // char, int, and pointer types
 // if, while, return, and expression statements
