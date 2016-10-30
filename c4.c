@@ -653,7 +653,7 @@ ssize_t elf32(ssize_t poolsz, ssize_t *start)
   return 0;
 }
 
-ssize_t main(ssize_t argc, char **argv)
+int main(int argc, char **argv)
 {
   ssize_t fd, bt, ty, poolsz, *idmain;
   ssize_t i, usejit, writeelf; // temps
@@ -666,8 +666,6 @@ ssize_t main(ssize_t argc, char **argv)
   if (argc > 0 && **argv == '-' && (*argv)[1] == 'j') { usejit = 1; --argc; ++argv; }
   if (argc > 0 && **argv == '-' && (*argv)[1] == 'o') { writeelf = 1; --argc; ++argv; }
   if (argc < 1) { printf("usage: c4 [-s] [-d] [-j] [-o] file ...\n"); return -1; }
-  if (usejit && sizeof(ssize_t) != 4) { printf("jit only works on 32-bit version\n"); return -1; }
-  if (writeelf && sizeof(ssize_t) != 4) { printf("only support elf32\n"); return -1; }
 
   if ((fd = open(*argv, 0)) < 0) { printf("could not open(%s)\n", *argv); return -1; }
 
