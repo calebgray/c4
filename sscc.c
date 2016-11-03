@@ -35,7 +35,7 @@ ssize_t *e, *le, *text,  // current position in emitted code
 // tokens and classes (operators last and in precedence order)
 enum {
   Num = 128, Fun, Sys, Glo, Loc, Id,
-  Char, Else, Enum, If, Int, Long, SSizeT, Return, Sizeof, While,
+  Char, Else, Enum, If, Int, Long, SizeT, SSizeT, Return, Sizeof, While,
   Assign, Cond, Lor, Lan, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Brak
 };
 
@@ -54,7 +54,7 @@ void next()
 {
   char *pp;
 
-  while (tk = *p) {
+  while ((tk = *p)) {
     ++p;
     if (tk == '\n') {
       if (src) {
@@ -88,7 +88,7 @@ void next()
       return;
     }
     else if (tk >= '0' && tk <= '9') {
-      if (ival = tk - '0') { while (*p >= '0' && *p <= '9') ival = ival * 10 + *p++ - '0'; }
+      if ((ival = tk - '0')) { while (*p >= '0' && *p <= '9') ival = ival * 10 + *p++ - '0'; }
       else if (*p == 'x' || *p == 'X') {
         while ((tk = *++p) && ((tk >= '0' && tk <= '9') || (tk >= 'a' && tk <= 'f') || (tk >= 'A' && tk <= 'F')))
           ival = ival * 16 + (tk & 15) + (tk >= 'A' ? 9 : 0);
@@ -113,7 +113,7 @@ void next()
         if ((ival = *p++) == '\\') {
           if ((ival = *p++) == 'n') ival = '\n';
         }
-        if (tk == '"') *data++ = ival;
+        if (tk == '"') *data++ = ival; // TODO: Investigate the effects of this narrowing conversion.
       }
       ++p;
       if (tk == '"') ival = (ssize_t)pp; else tk = Num;
@@ -149,7 +149,7 @@ void expr(ssize_t lev)
   }
   else if (tk == Sizeof) {
     next(); if (tk == '(') next(); else { printf("%zd: open paren expected in sizeof\n", line); exit(-1); }
-    ty = INT; if (tk == Int || tk == SSizeT) next(); else if (tk == Char) { next(); ty = CHAR; }
+    ty = INT; if (tk == Int || tk == SizeT || tk == SSizeT) next(); else if (tk == Char) { next(); ty = CHAR; }
     while (tk == Mul) { next(); ty = ty + PTR; }
     if (tk == ')') next(); else { printf("%zd: close paren expected in sizeof\n", line); exit(-1); }
     *++e = IMM; *++e = (ty == CHAR) ? sizeof(char) : sizeof(ssize_t);
@@ -178,8 +178,8 @@ void expr(ssize_t lev)
   }
   else if (tk == '(') {
     next();
-    if (tk == Int || tk == SSizeT || tk == Char) {
-      t = (tk == Int || tk == SSizeT) ? INT : CHAR; next();
+    if (tk == Int || tk == SizeT || tk == SSizeT || tk == Char) {
+      t = (tk == Int || tk == SizeT || tk == SSizeT) ? INT : CHAR; next();
       while (tk == Mul) { next(); t = t + PTR; }
       if (tk == ')') next(); else { printf("%zd: bad cast\n", line); exit(-1); }
       expr(Inc);
@@ -335,7 +335,7 @@ void stmt()
   }
 }
 
-ssize_t run(ssize_t poolsz, ssize_t *start, ssize_t argc, char **argv)
+int run(size_t poolsz, ssize_t *start, int argc, char **argv)
 {
   ssize_t *pc, *sp, *bp, a, cycle; // vm registers
   ssize_t i, *t; // temps
@@ -375,7 +375,7 @@ ssize_t run(ssize_t poolsz, ssize_t *start, ssize_t argc, char **argv)
     else if (i == LI)  a = *(ssize_t *)a;                                     // load ssize_t
     else if (i == LC)  a = *(char *)a;                                    // load char
     else if (i == SI)  *(ssize_t *)*sp++ = a;                                 // store ssize_t
-    else if (i == SC)  a = *(char *)*sp++ = a;                            // store char
+    else if (i == SC)  a = *(char *)*sp++ = a;                            // store char   TODO: Narrowing conversion...
     else if (i == PSH) *--sp = a;                                         // push
 
     else if (i == OR)  a = *sp++ |  a;
@@ -395,17 +395,17 @@ ssize_t run(ssize_t poolsz, ssize_t *start, ssize_t argc, char **argv)
     else if (i == DIV) a = *sp++ /  a;
     else if (i == MOD) a = *sp++ %  a;
 
-    else if (i == OPEN) a = open((char *)sp[1], *sp);
-    else if (i == READ) a = read(sp[2], (char *)sp[1], *sp);
-    else if (i == WRIT) a = write(sp[2], (char *)sp[1], *sp);
-    else if (i == CLOS) a = close(*sp);
+    else if (i == OPEN) a = open((char *)sp[1], (int) *sp);
+    else if (i == READ) a = read((int) sp[2], (char *)sp[1], (size_t) *sp);
+    else if (i == WRIT) a = write((int) sp[2], (char *)sp[1], (size_t) *sp);
+    else if (i == CLOS) a = close((int) *sp);
     else if (i == PRTF) { t = sp + pc[1]; a = printf((char *)t[-1], t[-2], t[-3], t[-4], t[-5], t[-6]); }
-    else if (i == MALC) a = (ssize_t)malloc(*sp);
-    else if (i == MSET) a = (ssize_t)memset((char *)sp[2], sp[1], *sp);
-    else if (i == MCMP) a = memcmp((char *)sp[2], (char *)sp[1], *sp);
-    else if (i == MCPY) a = (ssize_t)memcpy((char *)sp[2], (char *)sp[1], *sp);
-    else if (i == MMAP) a = (ssize_t)mmap((char*)sp[5], sp[4], sp[3], sp[2], sp[1], *sp);
-    else if (i == EXIT) { printf("exit(%zd) cycle = %zd\n", *sp, cycle); return *sp; }
+    else if (i == MALC) a = (ssize_t)malloc((size_t) *sp);
+    else if (i == MSET) a = (ssize_t)memset((char *)sp[2], (int) sp[1], (size_t) *sp);
+    else if (i == MCMP) a = memcmp((char *)sp[2], (char *)sp[1], (size_t) *sp);
+    else if (i == MCPY) a = (ssize_t)memcpy((char *)sp[2], (char *)sp[1], (size_t) *sp);
+    else if (i == MMAP) a = (ssize_t)mmap((char*)sp[5], (size_t) sp[4], (int) sp[3], (int) sp[2], (int) sp[1], *sp);
+    else if (i == EXIT) { printf("exit(%zd) cycle = %zd\n", *sp, cycle); return (int) *sp; }
     else { printf("unknown instruction = %zd! cycle = %zd\n", i, cycle); return -1; }
   }
 }
@@ -423,14 +423,14 @@ char *codegen(char *jitmem, ssize_t reloc)
     *pc++ = ((ssize_t)je << 8) | i; // for later relocation of JMP/JSR/BZ/BNZ
     if (i == LEA) {
       i = 4 * *pc++; if (i < -128 || i > 127) { printf("jit: LEA out of bounds\n"); return 0; }
-      *(ssize_t*)je = 0x458d; je = je + 2; *je++ = i;  // leal $(4 * n)(%ebp), %eax
+      *(ssize_t*)je = 0x458d; je = je + 2; *je++ = i;  // leal $(4 * n)(%ebp), %eax         TODO: Narrowing conversion...
     }
     else if (i == ENT) {
       i = 4 * *pc++; if (i < -128 || i > 127) { printf("jit: ENT out of bounds\n"); return 0; }
       *(ssize_t *)je = 0xe58955; je = je + 3;  // push %ebp; movl %esp, %ebp
       if (i > 0) { *(ssize_t *)je = 0xec83; je = je + 2; *(ssize_t*)je++ = i; } // subl $(i*4), %esp
     }
-    else if (i == IMM) { *je++ = 0xb8; *(ssize_t *)je = *pc++; je = je + 4; } // movl $imm, %eax
+    else if (i == IMM) { *je++ = 0xb8; *(ssize_t *)je = *pc++; je = je + 4; } // movl $imm, %eax        TODO: Narrowing conversion...
     else if (i == ADJ) { i = 4 * *pc++; *(ssize_t *)je = 0xc483; je = je + 2; *(ssize_t *)je = i; je++; } // addl $(n * 4), %esp
     else if (i == PSH)   *(ssize_t *)je++ = 0x50;                    // push %eax
     else if (i == LEV) { *(ssize_t *)je = 0xc35dec89; je = je + 4; } // mov %ebp, %esp; pop %ebp; ret
@@ -443,12 +443,12 @@ char *codegen(char *jitmem, ssize_t reloc)
     else if (i == AND) { *(ssize_t *)je = 0xc82159;   je = je + 3; } // pop %ecx; andl %ecx, %eax
     else if (EQ <= i && i <= GE) {
         *(ssize_t*)je=0x0fc13959; je = je + 4; *(ssize_t*)je=0x9866c094; // pop %ecx; cmp %ecx, %eax; sete %al; cbw; - EQ
-        if      (i == NE)  { *je = 0x95; } // setne %al
-        else if (i == LT)  { *je = 0x9c; } // setl %al
-        else if (i == GT)  { *je = 0x9f; } // setg %al
-        else if (i == LE)  { *je = 0x9e; } // setle %al
-        else if (i == GE)  { *je = 0x9d; } // setge %al
-        je = je + 4; *je++=0x98;  // cwde
+        if      (i == NE)  { *je = 0x95; } // setne %al     TODO: Narrowing conversion...
+        else if (i == LT)  { *je = 0x9c; } // setl %al      TODO: Narrowing conversion...
+        else if (i == GT)  { *je = 0x9f; } // setg %al      TODO: Narrowing conversion...
+        else if (i == LE)  { *je = 0x9e; } // setle %al     TODO: Narrowing conversion...
+        else if (i == GE)  { *je = 0x9d; } // setge %al     TODO: Narrowing conversion...
+        je = je + 4; *je++=0x98;  // cwde                   TODO: Narrowing conversion...
     }
     else if (i == SHL) { *(ssize_t*)je = 0xe0d39159; je = je + 4; } // pop %ecx; xchg %eax, %ecx; shl %cl, %eax
     else if (i == SHR) { *(ssize_t*)je = 0xe8d39159; je = je + 4; } // pop %ecx; xchg %eax, %ecx; shr %cl, %eax
@@ -457,8 +457,8 @@ char *codegen(char *jitmem, ssize_t reloc)
     else if (i == MUL) { *(ssize_t*)je = 0xc1af0f59; je = je + 4; } // pop %ecx; imul %ecx, %eax
     else if (i == DIV) { *(ssize_t*)je = 0xf9f79159; je = je + 4; } // pop %ecx; xchg %eax, %ecx; idiv %ecx, %eax
     else if (i == MOD) { *(ssize_t*)je = 0xd2319159; je = je + 4; *(ssize_t *)je = 0x92f9f7; je = je + 3; }
-    else if (i == JMP) { ++pc; *je       = 0xe9;     je = je + 5; } // jmp <off32>
-    else if (i == JSR) { ++pc; *je       = 0xe8;     je = je + 5; } // call <off32>
+    else if (i == JMP) { ++pc; *je       = 0xe9;     je = je + 5; } // jmp <off32>    TODO: Narrowing conversion...
+    else if (i == JSR) { ++pc; *je       = 0xe8;     je = je + 5; } // call <off32>   TODO: Narrowing conversion...
     else if (i == BZ)  { ++pc; *(ssize_t*)je = 0x840fc085; je = je + 8; } // test %eax, %eax; jz <off32>
     else if (i == BNZ) { ++pc; *(ssize_t*)je = 0x850fc085; je = je + 8; } // test %eax, %eax; jnz <off32>
     else if (i >= OPEN) {
@@ -471,15 +471,15 @@ char *codegen(char *jitmem, ssize_t reloc)
       else if (i == MMAP) tmp = (ssize_t)dlsym(0, "mmap");   else if (i == DSYM) tmp = (ssize_t)dlsym(0, "dlsym");
       else if (i == QSRT) tmp = (ssize_t)dlsym(0, "qsort");  else if (i == EXIT) tmp = (ssize_t)dlsym(0, "exit");
       if (*pc++ == ADJ) { i = *pc++; } else { printf("no ADJ after native proc!\n"); exit(2); }
-      *je++ = 0xb9; *(ssize_t*)je = i << 2; je = je + 4;  // movl $(4 * n), %ecx;
+      *je++ = 0xb9; *(ssize_t*)je = i << 2; je = je + 4;  // movl $(4 * n), %ecx;     TODO: Narrowing conversion...
       *(ssize_t*)je = 0xce29e689; je = je + 4; // mov %esp, %esi; sub %ecx, %esi;  -- %esi will adjust the stack
       *(ssize_t*)je = 0x8302e9c1; je = je + 4; // shr $2, %ecx; and                -- alignment of %esp for OS X
       *(ssize_t*)je = 0x895af0e6; je = je + 4; // $0xfffffff0, %esi; pop %edx; mov..
       *(ssize_t*)je = 0xe2fc8e54; je = je + 4; // ..%edx, -4(%esi,%ecx,4); loop..  -- reversing args order
       if (reloc) {
         *(ssize_t*)je = 0xf487f9; je = je + 3; // ..<'pop' offset>; xchg %esi, %esp;         -- saving old stack in %esi
-        *je++ = 0xb8; *(ssize_t*)je = tmp; je = je + 4; // mov $reloc, %eax
-        *je++ = 0xff; *je++ = 0x10;                 // call *(%eax)
+        *je++ = 0xb8; *(ssize_t*)je = tmp; je = je + 4; // mov $reloc, %eax             TODO: Narrowing conversion...
+        *je++ = 0xff; *je++ = 0x10;                 // call *(%eax)                     TODO: Narrowing conversion...
       }
       else {
         *(ssize_t*)je = 0xe8f487f9; je = je + 4; // ..<'pop' offset>; xchg %esi, %esp; call    -- saving old stack in %esi
@@ -506,7 +506,7 @@ char *codegen(char *jitmem, ssize_t reloc)
   return tje;
 }
 
-ssize_t jit(ssize_t poolsz, ssize_t *start, ssize_t argc, char **argv)
+int jit(size_t poolsz, ssize_t *start, int argc, char **argv)
 {
   char *jitmem;      // executable memory for JIT-compiled native code
   char *jitmain, *je, *tje;
@@ -521,17 +521,17 @@ ssize_t jit(ssize_t poolsz, ssize_t *start, ssize_t argc, char **argv)
 
   jitmain = (char *)(((*(ssize_t *)start >> 8) & 0x00ffffff) | ((ssize_t)jitmem & 0xff000000));
   *je++ = 0x56;                                                     // push %esi
-  *je++ = 0xb8; *(ssize_t *)   je = argc; je = je+4; *je++ = 0x50;      // movl $argc, %eax; push %eax
-  *je++ = 0xb8; *(char ***)je = argv; je = je+4; *je++ = 0x50;      // movl $argv, %eax; push %eax
-  *je++ = 0xe8; *(ssize_t *)je = (ssize_t)jitmain - (ssize_t)je - 4; je = je+4; // call main
-  *je++ = 0x83; *je++ = 0xc4; *je++ = 8;                            // add $8, %esp
-  *je++ = 0x5e;                                                     // pop %esi
-  *je++ = 0xc3;                                                     // ret
+  *je++ = 0xb8; *(ssize_t *)   je = argc; je = je+4; *je++ = 0x50;      // movl $argc, %eax; push %eax    TODO: Narrowing conversion...
+  *je++ = 0xb8; *(char ***)je = argv; je = je+4; *je++ = 0x50;      // movl $argv, %eax; push %eax        TODO: Narrowing conversion...
+  *je++ = 0xe8; *(ssize_t *)je = (ssize_t)jitmain - (ssize_t)je - 4; je = je+4; // call main              TODO: Narrowing conversion...
+  *je++ = 0x83; *je++ = 0xc4; *je++ = 8;                            // add $8, %esp                       TODO: Narrowing conversion...
+  *je++ = 0x5e;                                                     // pop %esi                           TODO: Narrowing conversion...
+  *je++ = 0xc3;                                                     // ret                                TODO: Narrowing conversion...
   qsort(sym, 2, 1, (void *)tje); // hack to call a function pointer
   return 0;
 }
 
-ssize_t elf32(ssize_t poolsz, ssize_t *start)
+int elf32(size_t poolsz, ssize_t *start)
 {
   char *o, *buf, *code, *entry, *je, *tje;
   char *to, *phdr, *dseg;
@@ -551,13 +551,13 @@ ssize_t elf32(ssize_t poolsz, ssize_t *start)
     return 1;
 
   entry = (char *)(((*(ssize_t *)start >> 8) & 0x00ffffff) | ((ssize_t)code & 0xff000000));
-  *je++ = 0x89; *je++ = 0xe0;                // mov    %esp,%eax
-  *je++ = 0x83; *je++ = 0xc0; *je++ = 0x04;  // add    $0x4,%eax
+  *je++ = 0x89; *je++ = 0xe0;                // mov    %esp,%eax    TODO: Narrowing conversion...
+  *je++ = 0x83; *je++ = 0xc0; *je++ = 0x04;  // add    $0x4,%eax    TODO: Narrowing conversion...
   *je++ = 0x50;                              // push   %eax
-  *je++ = 0xe8; *(ssize_t *)je = (ssize_t)entry - (ssize_t)je - 4; je = je+4; // call main
-  *je++ = 0x89; *je++ = 0xc3;               // mov    %eax,%ebx
-  *je++ = 0xb8; *(ssize_t*)je = 1; je = je + 4; // mov    $0x1,%eax
-  *je++ = 0xcd; *je++ = 0x80;               // ssize_t    $0x80
+  *je++ = 0xe8; *(ssize_t *)je = (ssize_t)entry - (ssize_t)je - 4; je = je+4; // call main    TODO: Narrowing conversion...
+  *je++ = 0x89; *je++ = 0xc3;               // mov    %eax,%ebx         TODO: Narrowing conversion...
+  *je++ = 0xb8; *(ssize_t*)je = 1; je = je + 4; // mov    $0x1,%eax     TODO: Narrowing conversion...
+  *je++ = 0xcd; *je++ = 0x80;               // ssize_t    $0x80         TODO: Narrowing conversion...
 
   // elf32_hdr
   *o++ = 0x7f; *o++ = 'E'; *o++ = 'L'; *o++ = 'F';
@@ -655,7 +655,9 @@ ssize_t elf32(ssize_t poolsz, ssize_t *start)
 
 int main(int argc, char **argv)
 {
-  ssize_t fd, bt, ty, poolsz, *idmain;
+  size_t poolsz;
+  int fd;
+  ssize_t bt, ty, *idmain;
   ssize_t i, usejit, writeelf; // temps
 
   usejit = 0;
@@ -684,7 +686,7 @@ int main(int argc, char **argv)
     data = _data + 64;
   }
 
-  p = "char else enum if int long ssize_t return sizeof while "
+  p = "char else enum if int long size_t ssize_t return sizeof while "
       "open read write close printf malloc memset memcmp memcpy mmap dlsym qsort exit void main";
   i = Char; while (i <= While) { next(); id[Tk] = i++; } // add keywords to symbol table
   i = OPEN; while (i <= EXIT) { next(); id[Class] = Sys; id[Type] = INT; id[Val] = i++; } // add library to symbol table
@@ -701,7 +703,7 @@ int main(int argc, char **argv)
   next();
   while (tk) {
     bt = INT; // basetype
-    if (tk == Int || tk == SSizeT) next();
+    if (tk == Int || tk == SizeT || tk == SSizeT) next();
     else if (tk == Char) { next(); bt = CHAR; }
     else if (tk == Enum) {
       next();
@@ -737,7 +739,7 @@ int main(int argc, char **argv)
         next(); i = 0;
         while (tk != ')') {
           ty = INT;
-          if (tk == Int || tk == SSizeT) next();
+          if (tk == Int || tk == SizeT || tk == SSizeT) next();
           else if (tk == Char) { next(); ty = CHAR; }
           while (tk == Mul) { next(); ty = ty + PTR; }
           if (tk != Id) { printf("%zd: bad parameter declaration\n", line); return -1; }
@@ -752,8 +754,8 @@ int main(int argc, char **argv)
         if (tk != '{') { printf("%zd: bad function definition\n", line); return -1; }
         loc = ++i;
         next();
-        while (tk == Int || tk == SSizeT || tk == Char) {
-          bt = (tk == Int || tk == SSizeT) ? INT : CHAR;
+        while (tk == Int || tk == SizeT || tk == SSizeT || tk == Char) {
+          bt = (tk == Int || tk == SizeT || tk == SSizeT) ? INT : CHAR;
           next();
           while (tk != ';') {
             ty = bt;
