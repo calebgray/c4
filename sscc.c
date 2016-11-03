@@ -18,8 +18,8 @@
 
 // TODO: replace all instance of (tk == SSizeT) with support for the proper type. (e.g. INT vs LONG)
 
-char *p, *lp, // current position in source code
-     *data, *_data;   // data/bss pointer
+char *freep, *p, *lp, // current position in source code
+     *freedata, *data, *_data;   // data/bss pointer
 
 ssize_t *e, *le, *text,  // current position in emitted code
     *id,      // currently parsed identifier
@@ -42,7 +42,7 @@ enum {
 // opcodes
 enum { LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,
        OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,
-       OPEN,READ,WRIT,CLOS,PRTF,MALC,MSET,MCMP,MCPY,MMAP,DSYM,QSRT,EXIT };
+       OPEN,READ,WRIT,CLOS,PRTF,MALC,FREE,MSET,MCMP,MCPY,MMAP,DSYM,QSRT,EXIT };
 
 // types
 enum { CHAR, INT, LONG, PTR };
@@ -63,7 +63,7 @@ void next()
         while (le < e) {
           printf("%8.4s", &"LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,"
                            "OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
-                           "OPEN,READ,WRIT,CLOS,PRTF,MALC,MSET,MCMP,MCPY,DSYM,QSRT,MMAP,EXIT,"[*++le * 5]);
+                           "OPEN,READ,WRIT,CLOS,PRTF,MALC,FREE,MSET,MCMP,MCPY,DSYM,QSRT,MMAP,EXIT,"[*++le * 5]);
           if (*le <= ADJ) printf(" %zd\n", *++le); else printf("\n");
         }
       }
@@ -337,12 +337,12 @@ void stmt()
 
 int run(size_t poolsz, ssize_t *start, int argc, char **argv)
 {
-  ssize_t *pc, *sp, *bp, a, cycle; // vm registers
+  ssize_t *freesp, *pc, *sp, *bp, a, cycle; // vm registers
   ssize_t i, *t; // temps
 
-  if (!(sp = malloc(poolsz))) { printf("could not malloc(%zd) stack area\n", poolsz); return -1; }
-  if (!(pc = start)) { printf("main() not defined\n"); return -1; }
-  if (src) return 0;
+  if (!(freesp = sp = malloc(poolsz))) { printf("could not malloc(%zd) stack area\n", poolsz); return -1; }
+  if (!(pc = start)) { printf("main() not defined\n"); free(freesp); return -1; }
+  if (src) { free(freesp); return 0; }
 
   // setup stack
   sp = (ssize_t *)((ssize_t)sp + poolsz);
@@ -360,7 +360,7 @@ int run(size_t poolsz, ssize_t *start, int argc, char **argv)
       printf("%zd> %.4s", cycle,
         &"LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,"
          "OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
-         "OPEN,READ,WRIT,CLOS,PRTF,MALC,MSET,MCMP,MCPY,DSYM,QSRT,MMAP,EXIT,"[i * 5]);
+         "OPEN,READ,WRIT,CLOS,PRTF,MALC,FREE,MSET,MCMP,MCPY,DSYM,QSRT,MMAP,EXIT,"[i * 5]);
       if (i <= ADJ) printf(" %zd\n", *pc); else printf("\n");
     }
     if      (i == LEA) a = (ssize_t)(bp + *pc++);                             // load local address
@@ -401,12 +401,13 @@ int run(size_t poolsz, ssize_t *start, int argc, char **argv)
     else if (i == CLOS) a = close((int) *sp);
     else if (i == PRTF) { t = sp + pc[1]; a = printf((char *)t[-1], t[-2], t[-3], t[-4], t[-5], t[-6]); }
     else if (i == MALC) a = (ssize_t)malloc((size_t) *sp);
+    else if (i == FREE) free((void *) *sp); // TODO: This conversion could probably fail in some cases.
     else if (i == MSET) a = (ssize_t)memset((char *)sp[2], (int) sp[1], (size_t) *sp);
     else if (i == MCMP) a = memcmp((char *)sp[2], (char *)sp[1], (size_t) *sp);
     else if (i == MCPY) a = (ssize_t)memcpy((char *)sp[2], (char *)sp[1], (size_t) *sp);
     else if (i == MMAP) a = (ssize_t)mmap((char*)sp[5], (size_t) sp[4], (int) sp[3], (int) sp[2], (int) sp[1], *sp);
-    else if (i == EXIT) { printf("exit(%zd) cycle = %zd\n", *sp, cycle); return (int) *sp; }
-    else { printf("unknown instruction = %zd! cycle = %zd\n", i, cycle); return -1; }
+    else if (i == EXIT) { printf("exit(%zd) cycle = %zd\n", *sp, cycle); return (int) *sp; }  // TODO: memleak, must call free(freesp);
+    else { printf("unknown instruction = %zd! cycle = %zd\n", i, cycle); return -1; }         // TODO: memleak, must call free(freesp);
   }
 }
 
@@ -463,13 +464,20 @@ char *codegen(char *jitmem, ssize_t reloc)
     else if (i == BNZ) { ++pc; *(ssize_t*)je = 0x850fc085; je = je + 8; } // test %eax, %eax; jnz <off32>
     else if (i >= OPEN) {
       if (reloc) tmp = (ssize_t)_data + (i - OPEN) * 4;
-      else if (i == OPEN) tmp = (ssize_t)dlsym(0, "open");   else if (i == READ) tmp = (ssize_t)dlsym(0, "read");
+      else if (i == OPEN) tmp = (ssize_t)dlsym(0, "open");
+      else if (i == READ) tmp = (ssize_t)dlsym(0, "read");
       else if (i == WRIT) tmp = (ssize_t)dlsym(0, "write");
-      else if (i == CLOS) tmp = (ssize_t)dlsym(0, "close");  else if (i == PRTF) tmp = (ssize_t)dlsym(0, "printf");
-      else if (i == MALC) tmp = (ssize_t)dlsym(0, "malloc"); else if (i == MSET) tmp = (ssize_t)dlsym(0, "memset");
-      else if (i == MCMP) tmp = (ssize_t)dlsym(0, "memcmp"); else if (i == MCPY) tmp = (ssize_t)dlsym(0, "memcpy");
-      else if (i == MMAP) tmp = (ssize_t)dlsym(0, "mmap");   else if (i == DSYM) tmp = (ssize_t)dlsym(0, "dlsym");
-      else if (i == QSRT) tmp = (ssize_t)dlsym(0, "qsort");  else if (i == EXIT) tmp = (ssize_t)dlsym(0, "exit");
+      else if (i == CLOS) tmp = (ssize_t)dlsym(0, "close");
+      else if (i == PRTF) tmp = (ssize_t)dlsym(0, "printf");
+      else if (i == MALC) tmp = (ssize_t)dlsym(0, "malloc");
+      else if (i == FREE) tmp = (ssize_t)dlsym(0, "free");
+      else if (i == MSET) tmp = (ssize_t)dlsym(0, "memset");
+      else if (i == MCMP) tmp = (ssize_t)dlsym(0, "memcmp");
+      else if (i == MCPY) tmp = (ssize_t)dlsym(0, "memcpy");
+      else if (i == MMAP) tmp = (ssize_t)dlsym(0, "mmap");
+      else if (i == DSYM) tmp = (ssize_t)dlsym(0, "dlsym");
+      else if (i == QSRT) tmp = (ssize_t)dlsym(0, "qsort");
+      else if (i == EXIT) tmp = (ssize_t)dlsym(0, "exit");
       if (*pc++ == ADJ) { i = *pc++; } else { printf("no ADJ after native proc!\n"); exit(2); }
       *je++ = 0xb9; *(ssize_t*)je = i << 2; je = je + 4;  // movl $(4 * n), %ecx;     TODO: Narrowing conversion...
       *(ssize_t*)je = 0xce29e689; je = je + 4; // mov %esp, %esi; sub %ecx, %esi;  -- %esi will adjust the stack
@@ -531,6 +539,7 @@ int jit(size_t poolsz, ssize_t *start, int argc, char **argv)
   return 0;
 }
 
+// TODO: investigate "corrupted section header size" reported by `file`
 int elf32(size_t poolsz, ssize_t *start)
 {
   char *o, *buf, *code, *entry, *je, *tje;
@@ -620,8 +629,20 @@ int elf32(size_t poolsz, ssize_t *start)
   ldso = to = to + 10; memcpy(to, "libdl.so.2", 11);
   sym = to + 11;
   memcpy(sym,
-         "open   read   write  close  printf malloc memset memcmp memcpy mmap   dlsym  qsort  exit  ",
-         (EXIT - OPEN + 1) * 7);
+     "open   "
+     "read   "
+     "write  "
+     "close  "
+     "printf "
+     "malloc "
+     "free   "
+     "memset "
+     "memcmp "
+     "memcpy "
+     "mmap   "
+     "dlsym  "
+     "qsort  "
+     "exit   ", (EXIT - OPEN + 1) * 7);
   to = sym; while (to < symtab) { if (*to == ' ') *to = 0; to++; }
 
   ti = (ssize_t*)symtab;
@@ -656,7 +677,7 @@ int elf32(size_t poolsz, ssize_t *start)
 int main(int argc, char **argv)
 {
   size_t poolsz;
-  int fd;
+  int fd, result;
   ssize_t bt, ty, *idmain;
   ssize_t i, usejit, writeelf; // temps
 
@@ -674,7 +695,7 @@ int main(int argc, char **argv)
   poolsz = 256*1024; // arbitrary size
   if (!(sym = malloc(poolsz))) { printf("could not malloc(%zd) symbol area\n", poolsz); return -1; }
   if (!(text = le = e = malloc(poolsz))) { printf("could not malloc(%zd) text area\n", poolsz); return -1; }
-  if (!(data = malloc(poolsz))) { printf("could not malloc(%zd) data area\n", poolsz); return -1; }
+  if (!(freedata = data = malloc(poolsz))) { printf("could not malloc(%zd) data area\n", poolsz); return -1; }
 
   memset(sym,  0, poolsz);
   memset(e,    0, poolsz);
@@ -687,13 +708,13 @@ int main(int argc, char **argv)
   }
 
   p = "char else enum if int long size_t ssize_t return sizeof while "
-      "open read write close printf malloc memset memcmp memcpy mmap dlsym qsort exit void main";
+      "open read write close printf malloc free memset memcmp memcpy mmap dlsym qsort exit void main";
   i = Char; while (i <= While) { next(); id[Tk] = i++; } // add keywords to symbol table
   i = OPEN; while (i <= EXIT) { next(); id[Class] = Sys; id[Type] = INT; id[Val] = i++; } // add library to symbol table
   next(); id[Tk] = Char; // handle void type
   next(); idmain = id; // keep track of main
 
-  if (!(lp = p = malloc(poolsz))) { printf("could not malloc(%zd) source area\n", poolsz); return -1; }
+  if (!(freep = lp = p = malloc(poolsz))) { printf("could not malloc(%zd) source area\n", poolsz); return -1; }
   if ((i = read(fd, p, poolsz-1)) <= 0) { printf("read() returned %zd\n", i); return -1; }
   p[i] = 0;
   close(fd);
@@ -792,9 +813,17 @@ int main(int argc, char **argv)
     }
     next();
   }
-  if (writeelf)
-    return elf32(poolsz, (ssize_t *)idmain[Val]);
-  if (usejit)
-    return jit(poolsz, (ssize_t *)idmain[Val], argc, argv);
-  return run(poolsz, (ssize_t *)idmain[Val], argc, argv);
+
+  if (writeelf) {
+    result = elf32(poolsz, (ssize_t *)idmain[Val]);
+  } else if (usejit) {
+    result = jit(poolsz, (ssize_t *)idmain[Val], argc, argv);
+  } else {
+    result = run(poolsz, (ssize_t *)idmain[Val], argc, argv);
+  }
+  free(freep);
+  free(freedata);
+  free(text);
+  free(sym);
+  return result;
 }
