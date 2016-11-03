@@ -1,4 +1,4 @@
-// c4.c - Tiny (and incomplete) C implementation in four functions.
+// sscc.c - Small-Scale (and incomplete) C Compiler
 
 // char, int, long, ssize_t, and pointer types
 // if, while, return, and expression statements

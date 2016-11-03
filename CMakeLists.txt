@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.6)
-project(c4)
+project(sscc)
 
 #
 # Custom Build Types
@@ -10,13 +10,19 @@ SET(CMAKE_EXE_LINKER_FLAGS_INSANE "" CACHE STRING "Flags used for linking binari
 SET(CMAKE_SHARED_LINKER_FLAGS_INSANE "" CACHE STRING "Flags used by the shared libraries linker during insane builds." FORCE)
 MARK_AS_ADVANCED(CMAKE_CXX_FLAGS_INSANE CMAKE_C_FLAGS_INSANE CMAKE_EXE_LINKER_FLAGS_INSANE CMAKE_SHARED_LINKER_FLAGS_INSANE)
 
-set(C4_SOURCE_FILES
-    c4.c)
+set(SSCC_SOURCE_FILES
+  sscc.c)
+
+add_executable(sscc ${SSCC_SOURCE_FILES})
+target_link_libraries(sscc dl)
+
+set(C5_SOURCE_FILES
+  c5.c)
+
+add_executable(c5 ${C5_SOURCE_FILES})
+target_link_libraries(c5 dl)
 
 set(HELLO_SOURCE_FILES
   hello.c)
-
-add_executable(c4 ${C4_SOURCE_FILES})
-target_link_libraries(c4 dl)
 
 add_executable(hello ${HELLO_SOURCE_FILES})

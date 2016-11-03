@@ -1,19 +1,19 @@
-## c4 - Tiny (and incomplete) C implementation in four functions.
+## sscc - Small-Scale (and incomplete) C Compiler
 
 Use CMake, or try the following:
 
-    gcc c4.c -ldl -o c4
-    ./c4 hello.c
-    ./c4 -s hello.c
-    ./c4 c4.c hello.c
-    ./c4 c4.c c4.c hello.c
+    gcc sscc.c -ldl -o sscc
+    ./sscc hello.c
+    ./sscc -s hello.c
+    ./sscc sscc.c hello.c
+    ./sscc sscc.c sscc.c hello.c
 
 Just-in-Time Compiler:
 
-    ./c4 -j c4.c hello.c
+    ./sscc -j sscc.c hello.c
 
 To produce an executable, try
 
-    ./c4 -o hello.c > hello
+    ./sscc -o hello.c > hello
     chmod 755 hello
     ./hello
