@@ -688,7 +688,7 @@ int main(int argc, char **argv)
   if (argc > 0 && **argv == '-' && (*argv)[1] == 'd') { debug = 1; --argc; ++argv; }
   if (argc > 0 && **argv == '-' && (*argv)[1] == 'j') { usejit = 1; --argc; ++argv; }
   if (argc > 0 && **argv == '-' && (*argv)[1] == 'o') { writeelf = 1; --argc; ++argv; }
-  if (argc < 1) { printf("usage: c4 [-s] [-d] [-j] [-o] file ...\n"); return -1; }
+  if (argc < 1) { printf("usage: sscc [-s] [-d] [-j] [-o] file ...\n"); return -1; }
 
   if ((fd = open(*argv, 0)) < 0) { printf("could not open(%s)\n", *argv); return -1; }
 

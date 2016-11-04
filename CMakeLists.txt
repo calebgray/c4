@@ -16,12 +16,6 @@ set(SSCC_SOURCE_FILES
 add_executable(sscc ${SSCC_SOURCE_FILES})
 target_link_libraries(sscc dl)
 
-set(C5_SOURCE_FILES
-  c5.c)
-
-add_executable(c5 ${C5_SOURCE_FILES})
-target_link_libraries(c5 dl)
-
 set(HELLO_SOURCE_FILES
   hello.c)
 
