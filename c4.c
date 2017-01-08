@@ -29,7 +29,7 @@ int *e, *le,  // current position in emitted code
 // tokens and classes (operators last and in precedence order)
 enum {
   Num = 128, Fun, Sys, Glo, Loc, Id,
-  Char, Else, Enum, If, Int, Return, Sizeof, While,
+  Char, Else, Enum, If, Int, Return, Sizeof, While, For,
   Assign, Cond, Lor, Lan, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Brak
 };
 
@@ -126,7 +126,7 @@ void next()
     else if (tk == '*') { tk = Mul; return; }
     else if (tk == '[') { tk = Brak; return; }
     else if (tk == '?') { tk = Cond; return; }
-    else if (tk == '~' || tk == ';' || tk == '{' || tk == '}' || tk == '(' || tk == ')' || tk == ']' || tk == ',' || tk == ':') return;
+    else if (tk == '~' || tk == ';' || tk == '{' || tk == '}' || tk == '(' || tk == ')' || tk == ']' || tk == ':') return;
   }
 }
 
@@ -212,7 +212,7 @@ void expr(int lev)
     *++e = (t == Inc) ? ADD : SUB;
     *++e = (ty == CHAR) ? SC : SI;
   }
-  else { printf("%d: bad expression\n", line); exit(-1); }
+  else { printf("%d: bad expression: %c\n", line, *p); exit(-1); }
 
   while (tk >= lev) { // "precedence climbing" or "Top Down Operator Precedence" method
     t = ty;
@@ -309,6 +309,21 @@ void stmt()
     *++e = JMP; *++e = (int)a;
     *b = (int)(e + 1);
   }
+  else if (tk == For) {
+    next();
+    if (tk == '(') next(); else { printf("%d: open paren expected\n", line); exit(-1); }
+    while (tk != ';') expr(Assign);
+    a = e + 1;
+    if (tk == ';') next(); else { printf("%d: semicolon expected\n", line); exit(-1); }
+    while (tk != ';') expr(Assign);
+    if (tk == ';') next(); else { printf("%d: semicolon expected\n", line); exit(-1); }
+    *++e = BZ; b = ++e;
+    while (tk != ')') expr(Assign);
+    if (tk == ')') next(); else { printf("%d: close paren expected\n", line); exit(-1); }
+    stmt();
+    *++e = JMP; *++e = (int)a;
+    *b = (int)(e + 1);
+  }
   else if (tk == Return) {
     next();
     if (tk != ';') expr(Assign);
@@ -352,9 +367,9 @@ int main(int argc, char **argv)
   memset(e,    0, poolsz);
   memset(data, 0, poolsz);
 
-  p = "char else enum if int return sizeof while "
+  p = "char else enum if int return sizeof while for "
       "open read close printf malloc memset memcmp exit void main";
-  i = Char; while (i <= While) { next(); id[Tk] = i++; } // add keywords to symbol table
+  i = Char; while (i <= For) { next(); id[Tk] = i++; } // add keywords to symbol table
   i = OPEN; while (i <= EXIT) { next(); id[Class] = Sys; id[Type] = INT; id[Val] = i++; } // add library to symbol table
   next(); id[Tk] = Char; // handle void type
   next(); idmain = id; // keep track of main
