@@ -34,7 +34,7 @@ enum {
 };
 
 // opcodes
-enum { LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,
+enum { LEA ,IMM ,JMP ,NOP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,
        OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,
        OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,EXIT };
 
@@ -55,7 +55,7 @@ void next()
         printf("%d: %.*s", line, p - lp, lp);
         lp = p;
         while (le < e) {
-          printf("%8.4s", &"LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,"
+          printf("%8.4s", &"LEA ,IMM ,JMP ,NOP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,"
                            "OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
                            "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,EXIT,"[*++le * 5]);
           if (*le <= ADJ) printf(" %d\n", *++le); else printf("\n");
@@ -282,7 +282,7 @@ void expr(int lev)
 
 void stmt()
 {
-  int *a, *b;
+  int *a, *b, *c, *d;
 
   if (tk == If) {
     next();
@@ -318,9 +318,13 @@ void stmt()
     while (tk != ';') expr(Assign);
     if (tk == ';') next(); else { printf("%d: semicolon expected\n", line); exit(-1); }
     *++e = BZ; b = ++e;
+    c = e;
     while (tk != ')') expr(Assign);
     if (tk == ')') next(); else { printf("%d: close paren expected\n", line); exit(-1); }
+    d = e;
     stmt();
+    while (c<d) { *++e = *(c+1); *(c+1)=NOP; c++;}
+
     *++e = JMP; *++e = (int)a;
     *b = (int)(e + 1);
   }
@@ -491,7 +495,7 @@ int main(int argc, char **argv)
     i = *pc++; ++cycle;
     if (debug) {
       printf("%d> %.4s", cycle,
-        &"LEA ,IMM ,JMP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,"
+        &"LEA ,IMM ,JMP ,NOP ,JSR ,BZ  ,BNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PSH ,"
          "OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
          "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,EXIT,"[i * 5]);
       if (i <= ADJ) printf(" %d\n", *pc); else printf("\n");
@@ -535,6 +539,7 @@ int main(int argc, char **argv)
     else if (i == MALC) a = (int)malloc(*sp);
     else if (i == MSET) a = (int)memset((char *)sp[2], sp[1], *sp);
     else if (i == MCMP) a = memcmp((char *)sp[2], (char *)sp[1], *sp);
+    else if (i == NOP) ; //NOP, do nothing
     else if (i == EXIT) { printf("exit(%d) cycle = %d\n", *sp, cycle); return *sp; }
     else { printf("unknown instruction = %d! cycle = %d\n", i, cycle); return -1; }
   }
