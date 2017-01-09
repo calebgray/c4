@@ -282,7 +282,7 @@ void expr(int lev)
 
 void stmt()
 {
-  int *a, *b, *c, *d;
+  int *a, *b;
 
   if (tk == If) {
     next();
@@ -310,6 +310,8 @@ void stmt()
     *b = (int)(e + 1);
   }
   else if (tk == For) {
+    int *c, *d, i;
+
     next();
     if (tk == '(') next(); else { printf("%d: open paren expected\n", line); exit(-1); }
     while (tk != ';') expr(Assign);
@@ -323,7 +325,12 @@ void stmt()
     if (tk == ')') next(); else { printf("%d: close paren expected\n", line); exit(-1); }
     d = e;
     stmt();
-    while (c<d) { *++e = *(c+1); *(c+1)=NOP; c++;}
+    i = 1;
+    //while (c < d) { *++e = *(c+1); *(c+1) = NOP; c++;}
+    while (i < d-c) { *++e = *(c+i); i++;} //copy the third clause in 'for' after the statement.
+    i = 1;
+    while (i < e-d) { *(c+i) = *(d+i); i++; } //move stmt left to replace the third clause in 'for'.
+    e = c + i;
 
     *++e = JMP; *++e = (int)a;
     *b = (int)(e + 1);
